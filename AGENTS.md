@@ -4,8 +4,8 @@
 
 ```bash
 source scripts/enable-venv.sh
-uv run ruff check PACKAGE_NAME/
-uv run pyright PACKAGE_NAME/
+uv run ruff check samgria/
+uv run pyright samgria/
 uv run pytest tests/
 make all
 ```

@@ -1,10 +1,10 @@
-# Contributing to PACKAGE_NAME
+# Contributing to samgria
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/DarkbyteAT/PACKAGE_NAME.git
-cd PACKAGE_NAME
+git clone https://github.com/DarkbyteAT/samgria.git
+cd samgria
 source scripts/enable-venv.sh
 ```
 
@@ -26,4 +26,4 @@ Tool configs live in dedicated files (`ruff.toml`, `pytest.ini`, `pyrightconfig.
 
 - Plain `def test_*` functions — no classes
 - Given-When-Then structure
-- `tests/` mirrors `PACKAGE_NAME/` layout
+- `tests/` mirrors `samgria/` layout

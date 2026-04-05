@@ -22,7 +22,7 @@ repos:
       - id: bandit
         name: scan vulnerabilities
         entry: bandit
-        args: ["-r", "PACKAGE_NAME", "--skip", "B101,B311"]
+        args: ["-r", "samgria", "--skip", "B101,B311"]
         pass_filenames: false
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

@@ -15,8 +15,8 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --group dev
-      - run: uv run ruff check PACKAGE_NAME/
-      - run: uv run ruff format --check PACKAGE_NAME/
+      - run: uv run ruff check samgria/
+      - run: uv run ruff format --check samgria/
 
   typecheck:
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --group dev
-      - run: uv run pyright PACKAGE_NAME/
+      - run: uv run pyright samgria/
 
   test:
     runs-on: ubuntu-latest

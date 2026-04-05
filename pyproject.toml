@@ -1,7 +1,7 @@
 [project]
-name = "PACKAGE_NAME"
+name = "samgria"
 version = "0.1.0"
-description = "PACKAGE_DESCRIPTION"
+description = "Composable gradient transforms for PyTorch — SAM, ASAM, LAMP, and beyond"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -28,8 +28,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/DarkbyteAT/PACKAGE_NAME"
-Repository = "https://github.com/DarkbyteAT/PACKAGE_NAME"
+Homepage = "https://github.com/DarkbyteAT/samgria"
+Repository = "https://github.com/DarkbyteAT/samgria"
 
 [build-system]
 requires = ["hatchling"]
