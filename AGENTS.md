@@ -12,5 +12,7 @@ make all
 
 ## Critical Rules
 
-- Python 3.11+
+- Transforms implement the GradientTransform protocol (apply + post_step)
+- Protocol uses nn.Module (not nn.ModuleDict) for generality
+- Python 3.11+, PyTorch aliases: `T` for `torch`, `nn` for `torch.nn`, `F` for `torch.nn.functional`
 - Plain `def test_*` functions, Given-When-Then structure

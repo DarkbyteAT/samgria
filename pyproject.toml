@@ -16,7 +16,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = []
+dependencies = [
+    "torch>=2.0",
+]
 
 [dependency-groups]
 dev = [
