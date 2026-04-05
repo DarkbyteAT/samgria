@@ -35,6 +35,14 @@ repos:
 
   - repo: local
     hooks:
+      - id: pyright
+        name: type check
+        language: system
+        entry: bash
+        args:
+          - -c
+          - pyright samgria/
+        pass_filenames: false
       - id: pytest
         name: unit tests
         language: system
