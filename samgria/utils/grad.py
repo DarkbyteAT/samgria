@@ -39,5 +39,5 @@ def set_grad(grads: T.Tensor, params: Iterable[nn.Parameter]) -> None:
     i = 0
 
     for p in params:
-        p.grad = grads[i : i + p.numel()].view(p.shape)
+        p.grad = grads[i : i + p.numel()].view(p.shape).to(p.device)
         i += p.numel()
