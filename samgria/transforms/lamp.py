@@ -1,7 +1,7 @@
 """LAMP (Local-Averaging over Multiple Perturbations) rollback transform.
 
 After the gradient descent step, injects uniform noise scaled by parameter
-magnitude and accumulates a moving average.  After ``rollback_len`` steps,
+magnitude and accumulates a moving average.  After ``rollback_len + 1`` steps,
 rolls back to the moving average.  Designed to be composed after a SAM or
 ASAM transform in the pipeline.
 
