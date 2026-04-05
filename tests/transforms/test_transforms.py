@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch as T
 import torch.nn as nn
 from torch.nn.utils import parameters_to_vector
@@ -21,7 +23,7 @@ def _make_model() -> nn.Linear:
     return nn.Linear(4, 2)
 
 
-def _make_loss_fn(model: nn.Module) -> tuple[nn.Module, tuple[T.Tensor, T.Tensor]]:
+def _make_loss_fn(model: nn.Module) -> tuple[Callable[..., T.Tensor], tuple[T.Tensor, T.Tensor]]:
     """Return a closure over *model* and a fixed (x, y) batch."""
     T.manual_seed(1)
     x = T.randn(8, 4)
@@ -30,7 +32,7 @@ def _make_loss_fn(model: nn.Module) -> tuple[nn.Module, tuple[T.Tensor, T.Tensor
     def loss_fn(x: T.Tensor, y: T.Tensor) -> T.Tensor:
         return ((model(x) - y) ** 2).mean()
 
-    return loss_fn, (x, y)  # type: ignore[return-value]
+    return loss_fn, (x, y)
 
 
 def _vanilla_grad(model: nn.Module, loss_fn: object, batch: tuple[T.Tensor, T.Tensor]) -> T.Tensor:
@@ -194,13 +196,16 @@ def test_lamp_rollback_resets_state() -> None:
     model = _make_model()
 
     # When post_step is called rollback_len + 1 times (triggers rollback)
+    params_before_rollback = parameters_to_vector(model.parameters()).detach().clone()
     for _ in range(4):
         lamp.post_step(model)
+    params_after_rollback = parameters_to_vector(model.parameters()).detach()
 
-    # Then internal state is reset
+    # Then internal state is reset and model params changed (rolled back to average)
     assert lamp.rollback_step == 0
     assert lamp.mean_params is not None
     assert T.allclose(lamp.mean_params, T.zeros_like(lamp.mean_params))
+    assert not T.allclose(params_before_rollback, params_after_rollback, atol=1e-8)
 
 
 @pytest.mark.unit
