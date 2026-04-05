@@ -39,18 +39,20 @@ def loss_fn(x, y):
 x = torch.randn(32, 8)
 y = torch.randint(0, 2, (32,))
 
-# 1. Forward + backward
+# 1. Forward
 loss = loss_fn(x, y)
+
+# 2. Backward
 loss.backward()
 
-# 2. Pre-descent transforms
+# 3. Pre-descent transforms
 sam.apply(model, loss_fn, (x, y))
 
-# 3. Gradient descent
+# 4. Gradient descent
 optimizer.step()
 optimizer.zero_grad()
 
-# 4. Post-descent transforms
+# 5. Post-descent transforms (no-op for SAM)
 sam.post_step(model)
 ```
 
