@@ -1,0 +1,18 @@
+line-length = 120
+
+[format]
+docstring-code-format = true
+
+[lint]
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "venv",
+]
+select = ["B", "E", "F", "I", "UP"]
+
+[lint.isort]
+lines-after-imports = 2
