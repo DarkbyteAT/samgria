@@ -1,3 +1,4 @@
 """Gradient transform protocol and implementations."""
 
 from samgria.transforms.protocol import GradientTransform as GradientTransform
+from samgria.transforms.sam import SAM as SAM
