@@ -394,3 +394,106 @@ def test_restore_resets_learning_rate() -> None:
 
     # Then the learning rate is back to the snapshotted value
     assert optimizer.param_groups[0]["lr"] == 1e-3
+
+
+# ---------------------------------------------------------------------------
+# Smoke tests — prove the full workflow behaves correctly
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_maml_inner_loop_pattern() -> None:
+    """Simulate a MAML outer step: save, adapt per task, restore between tasks.
+
+    This proves that save_state/restore_state correctly isolate inner-loop
+    adaptation across multiple tasks.  After adapting on each task independently,
+    restoring to the outer-loop state must yield identical parameters every time,
+    and each task's adapted parameters must differ from both the outer state and
+    from each other (since they train on different data).
+    """
+    T.manual_seed(0)
+    model = _make_bn_model()
+    model.train()
+    optimizer = T.optim.Adam(model.parameters(), lr=1e-3)
+
+    # Outer-loop pre-training
+    for _ in range(5):
+        _train_step(model, optimizer)
+
+    # Given a snapshot of the outer-loop state
+    outer_snapshot = save_state(model, optimizer)
+    outer_params = outer_snapshot.params.clone()
+
+    # When we adapt on 3 independent tasks (inner loops)
+    adapted_params: list[T.Tensor] = []
+    for task_id in range(3):
+        # Restore to outer state before each task
+        restore_state(model, optimizer, outer_snapshot)
+
+        # Verify we're starting from the outer state
+        assert T.equal(
+            parameters_to_vector(model.parameters()).detach(), outer_params
+        )
+        # Verify gradients are clean
+        assert all(p.grad is None for p in model.parameters())
+
+        # Inner-loop adaptation with task-specific data
+        T.manual_seed(100 + task_id)  # different data per task
+        for _ in range(5):
+            _train_step(model, optimizer)
+
+        adapted_params.append(
+            parameters_to_vector(model.parameters()).detach().clone()
+        )
+
+    # Then each task's adapted params differ from the outer state
+    for i, ap in enumerate(adapted_params):
+        assert not T.equal(ap, outer_params), f"Task {i} did not adapt"
+
+    # And each task's adapted params differ from each other
+    for i in range(len(adapted_params)):
+        for j in range(i + 1, len(adapted_params)):
+            assert not T.equal(adapted_params[i], adapted_params[j]), (
+                f"Tasks {i} and {j} produced identical adapted params"
+            )
+
+    # And the outer snapshot is still pristine after all inner loops
+    assert T.equal(outer_snapshot.params, outer_params)
+
+
+@pytest.mark.integration
+def test_batch_norm_isolation_across_tasks() -> None:
+    """Batch norm running stats do not leak between tasks.
+
+    Without buffer restore, running_mean/running_var accumulate statistics
+    from all tasks, causing each subsequent task to start from a different
+    statistical baseline.  This test verifies that restore_state prevents
+    this cross-task contamination.
+    """
+    T.manual_seed(0)
+    model = _make_bn_model()
+    model.train()
+    optimizer = T.optim.Adam(model.parameters(), lr=1e-3)
+
+    # Accumulate some running stats
+    for _ in range(5):
+        _train_step(model, optimizer)
+
+    # Given a snapshot with specific running stats
+    snapshot = save_state(model, optimizer)
+    bn = model[1]
+    assert isinstance(bn, nn.BatchNorm1d)
+    saved_running_mean = snapshot.buffers["1.running_mean"].clone()
+
+    # When we train on task A (shifts running stats)
+    T.manual_seed(200)
+    for _ in range(10):
+        _train_step(model, optimizer)
+    stats_after_task_a = bn.running_mean.clone()  # type: ignore[union-attr]
+    assert not T.equal(stats_after_task_a, saved_running_mean)
+
+    # And restore before task B
+    restore_state(model, optimizer, snapshot)
+
+    # Then running stats are back to the snapshot (task A didn't leak)
+    assert T.equal(bn.running_mean, saved_running_mean)  # type: ignore[arg-type]
