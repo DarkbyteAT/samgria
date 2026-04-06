@@ -317,3 +317,80 @@ def test_restore_raises_on_buffer_mismatch() -> None:
     # Then a ValueError is raised mentioning the buffer mismatch
     with pytest.raises(ValueError, match="[Bb]uffer"):
         restore_state(model_different, optimizer_diff, snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Gradient hygiene
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_restore_clears_stale_gradients() -> None:
+    """Restoring state sets all .grad attributes to None."""
+    # Given a model that has been trained (gradients populated)
+    model = _make_mlp()
+    optimizer = T.optim.Adam(model.parameters())
+    snapshot = save_state(model, optimizer)
+    _train_step(model, optimizer)
+
+    # Verify gradients exist before restore
+    assert all(p.grad is not None for p in model.parameters())
+
+    # When state is restored
+    restore_state(model, optimizer, snapshot)
+
+    # Then all gradients are cleared
+    assert all(p.grad is None for p in model.parameters())
+
+
+# ---------------------------------------------------------------------------
+# MAML outer-loop pattern: multiple restores from the same snapshot
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_multiple_restores_from_same_snapshot() -> None:
+    """Restoring the same snapshot twice yields identical state both times."""
+    # Given a snapshot after some initial training
+    model = _make_mlp()
+    optimizer = T.optim.Adam(model.parameters(), lr=1e-3)
+    for _ in range(3):
+        _train_step(model, optimizer)
+    snapshot = save_state(model, optimizer)
+
+    # When we train, restore, capture state, train again, restore again
+    for _ in range(5):
+        _train_step(model, optimizer)
+    restore_state(model, optimizer, snapshot)
+    params_first_restore = parameters_to_vector(model.parameters()).detach().clone()
+
+    for _ in range(5):
+        _train_step(model, optimizer)
+    restore_state(model, optimizer, snapshot)
+    params_second_restore = parameters_to_vector(model.parameters()).detach().clone()
+
+    # Then both restores produce identical parameters
+    assert T.equal(params_first_restore, params_second_restore)
+
+
+# ---------------------------------------------------------------------------
+# Optimizer param_groups (e.g. learning rate)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_restore_resets_learning_rate() -> None:
+    """Restoring a snapshot recovers the optimizer's learning rate."""
+    # Given a snapshot with lr=1e-3
+    model = _make_mlp()
+    optimizer = T.optim.Adam(model.parameters(), lr=1e-3)
+    for _ in range(3):
+        _train_step(model, optimizer)
+    snapshot = save_state(model, optimizer)
+
+    # When the learning rate is changed and then state is restored
+    optimizer.param_groups[0]["lr"] = 1e-5
+    restore_state(model, optimizer, snapshot)
+
+    # Then the learning rate is back to the snapshotted value
+    assert optimizer.param_groups[0]["lr"] == 1e-3

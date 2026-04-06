@@ -121,6 +121,18 @@ def restore_state(
         step counts) will be replaced with the snapshot's copy.
     snapshot
         The snapshot to restore from.  It is not modified.
+
+    Notes
+    -----
+    Gradients are cleared (set to ``None``) on all parameters after
+    restore.  This prevents stale gradients from a previous inner loop
+    leaking into the next task.
+
+    All named buffers are restored, including batch norm's
+    ``num_batches_tracked``.  This is correct for MAML (full state
+    reset between tasks) but may not be appropriate for Reptile, which
+    interpolates parameters without restoring.  Meta-optimizers that
+    do not need buffer restore should handle this upstream.
     """
     # Validate parameter count matches
     model_numel = sum(p.numel() for p in model.parameters())
@@ -145,8 +157,12 @@ def restore_state(
             f"Buffer mismatch between model and snapshot. {'; '.join(parts)}"
         )
 
-    # Restore parameters
+    # Restore parameters and clear stale gradients.  Without this,
+    # gradients from a previous inner loop could leak into the next
+    # task — especially dangerous for MAML with create_graph=True.
     vector_to_parameters(snapshot.params.clone(), model.parameters())
+    for p in model.parameters():
+        p.grad = None
 
     # Restore optimizer state (deep copy so the snapshot stays pristine)
     optimizer.load_state_dict(copy.deepcopy(snapshot.optim_state))
