@@ -115,6 +115,12 @@ def train_fomaml(label: str, reg_fn=None) -> None:
     fomaml = FOMAML(inner_lr=INNER_LR)
     fomaml_curves[label] = []
 
+    mse = eval_adaptation(model, opt, fomaml)
+    fomaml_curves[label].append(mse)
+    if not eval_steps:
+        eval_steps.append(0)
+    print(f"  FOMAML λ={label} step   0  loss: {mse:.4f}")
+
     for step in range(OUTER_STEPS):
         kwargs = {"loss_fn": loss_fn(model), "inner_steps": INNER_STEPS}
         if reg_fn is not None:
@@ -139,6 +145,10 @@ def train_reptile(label: str, reg_fn=None) -> None:
     model, opt = fresh_model()
     reptile = Reptile(inner_lr=INNER_LR, meta_lr=1.0)
     reptile_curves[label] = []
+
+    mse = eval_adaptation(model, opt, reptile)
+    reptile_curves[label].append(mse)
+    print(f"  Reptile λ={label} step   0  loss: {mse:.4f}")
 
     for step in range(OUTER_STEPS):
         kwargs = {"loss_fn": loss_fn(model), "inner_steps": INNER_STEPS}

@@ -166,6 +166,12 @@ def train_baseline() -> None:
     loss_curves["Baseline"] = []
     acc_curves["Baseline"] = []
 
+    q_loss, q_acc = eval_adaptation(model, opt, fomaml)
+    loss_curves["Baseline"].append(q_loss)
+    acc_curves["Baseline"].append(q_acc)
+    eval_steps.append(0)
+    print(f"  Baseline step    0  acc: {q_acc:.3f}  loss: {q_loss:.4f}")
+
     for step in range(OUTER_STEPS):
         support, _ = sample_task()
         opt.zero_grad()
@@ -189,6 +195,11 @@ def train(name: str, algo) -> None:
     loss_curves[name] = []
     acc_curves[name] = []
 
+    q_loss, q_acc = eval_adaptation(model, opt, algo)
+    loss_curves[name].append(q_loss)
+    acc_curves[name].append(q_acc)
+    print(f"  {name} step    0  acc: {q_acc:.3f}  loss: {q_loss:.4f}")
+
     for step in range(OUTER_STEPS):
         with meta_step(algo, model, opt, loss_fn=bce_loss(model), inner_steps=INNER_STEPS) as ms:
             for _ in range(TASKS_PER_STEP):
@@ -211,6 +222,11 @@ def train_reptile() -> None:
     reptile = Reptile(inner_lr=INNER_LR, meta_lr=1.0)
     loss_curves["Reptile"] = []
     acc_curves["Reptile"] = []
+
+    q_loss, q_acc = eval_adaptation(model, opt, reptile)
+    loss_curves["Reptile"].append(q_loss)
+    acc_curves["Reptile"].append(q_acc)
+    print(f"  Reptile step    0  acc: {q_acc:.3f}  loss: {q_loss:.4f}")
 
     for step in range(OUTER_STEPS):
         with meta_step(reptile, model, opt, loss_fn=bce_loss(model), inner_steps=INNER_STEPS) as ms:

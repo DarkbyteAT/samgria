@@ -125,6 +125,11 @@ def train_baseline() -> None:
     fomaml = FOMAML(inner_lr=INNER_LR)
     curves["Baseline"] = []
 
+    mse = eval_adaptation(model, opt, fomaml)
+    curves["Baseline"].append(mse)
+    eval_steps.append(0)
+    print(f"  Baseline step   0  loss: {mse:.4f}")
+
     for step in range(OUTER_STEPS):
         # Regular training: just do gradient descent on a random sinusoid
         amp, phase = random_sinusoid()
@@ -148,6 +153,10 @@ def train_baseline() -> None:
 def train(name: str, algo) -> None:
     model, opt = fresh_model()
     curves[name] = []
+
+    mse = eval_adaptation(model, opt, algo)
+    curves[name].append(mse)
+    print(f"  {name} step   0  loss: {mse:.4f}")
 
     for step in range(OUTER_STEPS):
         with meta_step(algo, model, opt, loss_fn=loss_fn(model), inner_steps=INNER_STEPS) as ms:
