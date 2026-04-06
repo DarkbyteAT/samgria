@@ -13,12 +13,11 @@ These tests document the contract that MetaStep and meta_step must satisfy:
 
 from __future__ import annotations
 
+import pytest
 import torch as T
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils import parameters_to_vector
-
-import pytest
 
 from samgria.meta import FOMAML, MAML, Reptile
 from samgria.meta.step import MetaStep, meta_step
@@ -269,7 +268,7 @@ def test_inner_reg_fn_affects_adapted_params() -> None:
     def l2_reg(current_params: dict[str, T.Tensor], base_params: dict[str, T.Tensor]) -> T.Tensor:
         return T.stack([
             ((c - b) ** 2).sum()
-            for c, b in zip(current_params.values(), base_params.values())
+            for c, b in zip(current_params.values(), base_params.values(), strict=False)
         ]).sum()
 
     with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=5,
@@ -299,10 +298,42 @@ def test_inner_reg_fn_pulls_toward_base() -> None:
     # And with strong L2 reg
     def strong_l2(current: dict[str, T.Tensor], base: dict[str, T.Tensor]) -> T.Tensor:
         return 10.0 * T.stack([
-            ((c - b) ** 2).sum() for c, b in zip(current.values(), base.values())
+            ((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=False)
         ]).sum()
 
     with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10,
+                   inner_reg_fn=strong_l2) as ms:
+        result_reg = ms.task(support=(x_s, y_s), query=(x_q, y_q))
+
+    # Then regularised params are closer to base
+    dist_plain = (result_plain.snapshot.params - base_params).norm()
+    dist_reg = (result_reg.snapshot.params - base_params).norm()
+    assert dist_reg < dist_plain
+
+
+@pytest.mark.unit
+def test_inner_reg_fn_works_with_maml() -> None:
+    """Inner-loop reg works with MAML's functional inner loop."""
+    # Given a model and MAML
+    T.manual_seed(42)
+    model = _make_mlp()
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    maml = MAML(inner_lr=0.01)
+    base_params = parameters_to_vector(model.parameters()).detach().clone()
+    x_s, y_s = _sinusoid_task(2.0, 1.0)
+    x_q, y_q = _sinusoid_task(2.0, 1.0, n=5)
+
+    def strong_l2(current: dict[str, T.Tensor], base: dict[str, T.Tensor]) -> T.Tensor:
+        return 10.0 * T.stack([
+            ((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=True)
+        ]).sum()
+
+    # When we adapt without reg
+    with meta_step(maml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10) as ms:
+        result_plain = ms.task(support=(x_s, y_s), query=(x_q, y_q))
+
+    # And with strong L2 reg
+    with meta_step(maml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10,
                    inner_reg_fn=strong_l2) as ms:
         result_reg = ms.task(support=(x_s, y_s), query=(x_q, y_q))
 

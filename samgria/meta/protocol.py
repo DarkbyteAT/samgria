@@ -8,24 +8,24 @@ Defines the two-method contract that all meta-optimizers must satisfy:
 - ``meta_step()`` computes and applies the outer-loop parameter update
   from a collection of adapted states.
 
-The protocol mirrors ``GradientTransform``'s apply/post_step split:
-adapt is a read (produces adapted state), meta_step is a write (updates
-parameters in-place).
+Inner-loop step function
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-Inner-loop optimiser
-~~~~~~~~~~~~~~~~~~~~
+The inner loop is parameterised by an ``InnerStepFn``: a callable that
+takes ``(params, grads)`` dicts and returns a new params dict.  The
+default is vanilla SGD (``sgd(lr)``), but any differentiable optimizer
+can be plugged in — the graph flows through as long as the step function
+uses tensor operations rather than in-place mutation.
 
-By default the inner loop uses vanilla SGD (standard in the MAML/Reptile
-literature and necessary for MAML's second-order graph tractability).
-Callers can override this by passing an ``inner_optimizer_fn`` to
-``adapt()`` — a factory that receives the model parameters and returns
-a fresh ``torch.optim.Optimizer``.  ``save_state`` / ``restore_state``
-guarantee full isolation regardless of which inner optimiser is used.
+For non-differentiable optimizers (standard PyTorch Adam etc.), use
+``mutation_optimizer(fn)`` which wraps them in the ``InnerStepFn``
+interface via ``.data`` mutation.  This severs the second-order graph
+but preserves first-order correctness.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from typing import Protocol, runtime_checkable
 
 import torch as T
@@ -36,14 +36,84 @@ from samgria.state import AdaptedState, ParameterSnapshot
 from samgria.transforms.protocol import GradientTransform
 
 
-#: Factory that builds a fresh optimizer for the inner loop.
-#: Receives an iterable of parameters, returns an Optimizer instance.
-InnerOptimizerFn = Callable[[Iterator[nn.Parameter]], optim.Optimizer]
+#: A single inner-loop optimisation step.  Takes the current parameter
+#: dict and gradient dict, returns a new parameter dict.  The graph
+#: flows through if the step uses tensor ops (not .data mutation).
+InnerStepFn = Callable[[dict[str, T.Tensor], dict[str, T.Tensor]], dict[str, T.Tensor]]
 
 #: Inner-loop regularisation callback.  Receives the current adapted
 #: parameter dict and the base (pre-adaptation) parameter dict, returns
 #: a scalar penalty added to the inner loss at each step.
 InnerRegFn = Callable[[dict[str, T.Tensor], dict[str, T.Tensor]], T.Tensor]
+
+
+def sgd(lr: float) -> InnerStepFn:
+    """Vanilla SGD inner step: ``p_new = p - lr * grad``."""
+
+    def step(
+        params: dict[str, T.Tensor], grads: dict[str, T.Tensor],
+    ) -> dict[str, T.Tensor]:
+        return {k: params[k] - lr * grads[k] for k in params}
+
+    return step
+
+
+def mutation_optimizer(
+    factory: Callable[..., optim.Optimizer],
+) -> InnerStepFn:
+    """Wrap a standard PyTorch optimizer as an ``InnerStepFn``.
+
+    The wrapper uses ``.data`` mutation internally, which severs the
+    second-order computation graph.  Use this as an escape hatch for
+    non-differentiable optimizers (Adam, SGD with momentum, etc.).
+
+    Parameters
+    ----------
+    factory
+        A callable that receives an iterable of parameters and returns
+        an ``optim.Optimizer``.  Called lazily on the first step.
+
+    Example
+    -------
+    ::
+
+        adapt(..., inner_step_fn=mutation_optimizer(
+            lambda p: optim.Adam(p, lr=0.01)
+        ))
+    """
+    opt_holder: list[optim.Optimizer] = []
+    param_holder: list[dict[str, nn.Parameter]] = []
+
+    def step(
+        params: dict[str, T.Tensor], grads: dict[str, T.Tensor],
+    ) -> dict[str, T.Tensor]:
+        # Lazy init: create nn.Parameters + optimizer on first call
+        if not param_holder:
+            nn_params = {
+                k: nn.Parameter(v.detach().clone()) for k, v in params.items()
+            }
+            param_holder.append(nn_params)
+            opt_holder.append(factory(nn_params.values()))
+        else:
+            # Sync current param values into the nn.Parameters
+            nn_params = param_holder[0]
+            with T.no_grad():
+                for k in params:
+                    nn_params[k].data.copy_(params[k].detach())
+
+        nn_params = param_holder[0]
+        opt = opt_holder[0]
+
+        # Set grads and step
+        opt.zero_grad()
+        for k in nn_params:
+            nn_params[k].grad = grads[k].detach()
+        opt.step()
+
+        # Return updated values (detached — first-order)
+        return {k: nn_params[k].data.detach().clone() for k in nn_params}
+
+    return step
 
 
 def capture_base_params(
@@ -54,25 +124,6 @@ def capture_base_params(
     if inner_reg_fn is None:
         return None
     return {k: v.detach().clone() for k, v in model.named_parameters()}
-
-
-def apply_inner_reg(
-    loss: T.Tensor,
-    model: nn.Module,
-    inner_reg_fn: InnerRegFn | None,
-    base_params: dict[str, T.Tensor] | None,
-) -> T.Tensor:
-    """Add inner-loop regularisation penalty to the loss.
-
-    Reads current parameters from the model's stored params — correct
-    for FOMAML and Reptile which mutate ``.data`` in place.  MAML uses
-    its own functional params dict and calls ``inner_reg_fn`` directly.
-    """
-    if inner_reg_fn is None:
-        return loss
-    assert base_params is not None
-    current: dict[str, T.Tensor] = dict(model.named_parameters())
-    return loss + inner_reg_fn(current, base_params)
 
 
 @runtime_checkable
@@ -93,10 +144,10 @@ class MetaOptimizer(Protocol):
         support: tuple[T.Tensor, ...],
         inner_steps: int,
         grad_transforms: Sequence[GradientTransform] = (),
-        inner_optimizer_fn: InnerOptimizerFn | None = None,
+        inner_step_fn: InnerStepFn | None = None,
         inner_reg_fn: InnerRegFn | None = None,
     ) -> AdaptedState:
-        """Run k inner optimisation steps on support data, return adapted state.
+        """Run k inner optimisation steps on support data.
 
         Parameters
         ----------
@@ -115,17 +166,14 @@ class MetaOptimizer(Protocol):
         grad_transforms
             Optional sequence of ``GradientTransform`` instances applied
             after ``loss.backward()`` but before each inner step.
-            Enables composing SAM, ASAM, etc. inside the inner loop.
-        inner_optimizer_fn
-            Optional factory that receives model parameters and returns a
-            fresh optimizer for the inner loop.  When ``None`` (default),
-            vanilla SGD at ``inner_lr`` is used.
+        inner_step_fn
+            Optional step function: ``(params, grads) -> new_params``.
+            Defaults to ``sgd(inner_lr)``.  Use ``mutation_optimizer()``
+            to wrap standard PyTorch optimizers.
         inner_reg_fn
             Optional regularisation callback.  At each inner step,
             ``inner_reg_fn(current_params, base_params)`` is added to
-            the task loss.  Each implementation uses its own parameter
-            representation (stored params for FOMAML, functional params
-            dict for MAML).
+            the task loss.
 
         Returns
         -------

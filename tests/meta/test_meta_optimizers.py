@@ -13,7 +13,7 @@ Key guarantees under test:
     - FOMAML does NOT create second-order graphs (first-order approx).
     - Reptile uses parameter interpolation, not query-loss gradients.
     - GradientTransforms (e.g. SAM) compose inside the inner loop.
-    - Inner loop defaults to manual SGD but is configurable via inner_optimizer_fn.
+    - Inner loop defaults to sgd(lr) but is configurable via inner_step_fn.
     - Outer optimizer state is untouched after adapt().
 """
 
@@ -275,8 +275,8 @@ def test_adapted_snapshot_differs_from_outer_state() -> None:
 
 
 @pytest.mark.unit
-def test_adapt_with_custom_inner_optimizer() -> None:
-    """adapt() accepts an inner_optimizer_fn to override the default SGD."""
+def test_adapt_with_mutation_optimizer() -> None:
+    """adapt() accepts mutation_optimizer() to use standard PyTorch optimizers."""
     # Given a model and FOMAML
     T.manual_seed(42)
     model = _make_mlp()
@@ -285,13 +285,14 @@ def test_adapt_with_custom_inner_optimizer() -> None:
     x, y = _sinusoid_task(amplitude=1.5, phase=0.5)
     outer_params_before = parameters_to_vector(model.parameters()).detach().clone()
 
-    # When adapt() runs with a custom Adam inner optimizer
+    # When adapt() runs with a mutation_optimizer wrapping Adam
+    from samgria.meta.protocol import mutation_optimizer
     result = fomaml.adapt(
         model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5,
-        inner_optimizer_fn=lambda params: optim.Adam(params, lr=0.01),
+        inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)),
     )
 
-    # Then the adapted params differ from outer (inner optimizer was used)
+    # Then the adapted params differ from outer
     assert not T.equal(result.snapshot.params, outer_params_before)
     # And outer state is still isolated
     outer_params_after = parameters_to_vector(model.parameters()).detach()
@@ -299,8 +300,8 @@ def test_adapt_with_custom_inner_optimizer() -> None:
 
 
 @pytest.mark.unit
-def test_custom_inner_optimizer_produces_different_trajectory() -> None:
-    """A custom inner optimizer produces different adapted params than default SGD."""
+def test_custom_inner_step_produces_different_trajectory() -> None:
+    """A custom inner_step_fn produces different adapted params than default SGD."""
     # Given a deterministic model and task
     T.manual_seed(42)
     model = _make_mlp()
@@ -311,10 +312,11 @@ def test_custom_inner_optimizer_produces_different_trajectory() -> None:
     # When we adapt with default SGD
     snap_sgd = fomaml.adapt(model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5)
 
-    # And adapt with Adam inner optimizer (same starting point due to isolation)
+    # And adapt with mutation_optimizer wrapping Adam
+    from samgria.meta.protocol import mutation_optimizer
     snap_adam = fomaml.adapt(
         model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5,
-        inner_optimizer_fn=lambda params: optim.Adam(params, lr=0.01),
+        inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)),
     )
 
     # Then the trajectories differ
@@ -322,20 +324,24 @@ def test_custom_inner_optimizer_produces_different_trajectory() -> None:
 
 
 @pytest.mark.unit
-def test_maml_rejects_inner_optimizer_fn() -> None:
-    """MAML raises ValueError when inner_optimizer_fn is provided."""
-    # Given a model and MAML
+def test_maml_with_custom_inner_step_fn() -> None:
+    """MAML accepts a differentiable inner_step_fn and preserves the graph."""
+    # Given a model and MAML with a custom differentiable SGD step
     model = _make_mlp()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     maml = MAML(inner_lr=0.01)
     x, y = _sinusoid_task(amplitude=1.0, phase=0.0)
 
-    # Then adapt() raises when inner_optimizer_fn is provided
-    with pytest.raises(ValueError, match="inner_optimizer_fn"):
-        maml.adapt(
-            model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3,
-            inner_optimizer_fn=lambda params: optim.Adam(params, lr=0.01),
-        )
+    # A differentiable step function (graph flows through)
+    from samgria.meta.protocol import sgd
+    result = maml.adapt(
+        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3,
+        inner_step_fn=sgd(lr=0.05),  # different LR than default
+    )
+
+    # Then live_params are present (graph preserved)
+    assert isinstance(result, AdaptedState)
+    assert result.live_params is not None
 
 
 # ---------------------------------------------------------------------------

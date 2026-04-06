@@ -3,6 +3,8 @@
 from samgria.meta.maml import FOMAML as FOMAML
 from samgria.meta.maml import MAML as MAML
 from samgria.meta.protocol import MetaOptimizer as MetaOptimizer
+from samgria.meta.protocol import mutation_optimizer as mutation_optimizer
+from samgria.meta.protocol import sgd as sgd
 from samgria.meta.reptile import Reptile as Reptile
 from samgria.meta.step import MetaStep as MetaStep
 from samgria.meta.step import meta_step as meta_step
@@ -35,7 +37,9 @@ __all__ = [
     "functional_forward",
     "get_grad",
     "meta_step",
+    "mutation_optimizer",
     "query_forward",
+    "sgd",
     "restore_state",
     "save_state",
     "set_grad",

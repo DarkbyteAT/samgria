@@ -25,7 +25,7 @@ import torch as T
 import torch.nn as nn
 import torch.optim as optim
 
-from samgria.meta.protocol import InnerOptimizerFn, InnerRegFn, MetaOptimizer
+from samgria.meta.protocol import InnerRegFn, InnerStepFn, MetaOptimizer
 from samgria.state import AdaptedState, restore_state, save_state
 from samgria.transforms.protocol import GradientTransform
 from samgria.utils.functional import functional_forward
@@ -56,8 +56,8 @@ class MetaStep:
         Default number of inner-loop SGD steps per task.
     grad_transforms
         Default gradient transforms for the inner loop.
-    inner_optimizer_fn
-        Default inner optimizer factory (FOMAML/Reptile only).
+    inner_step_fn
+        Default inner step function: ``(params, grads) -> new_params``.
     inner_reg_fn
         Regularisation callback added to the inner loss at each step.
         Signature: ``(current_params, base_params) -> scalar_penalty``.
@@ -72,7 +72,7 @@ class MetaStep:
         loss_fn: Callable[..., T.Tensor] | None = None,
         inner_steps: int | None = None,
         grad_transforms: Sequence[GradientTransform] = (),
-        inner_optimizer_fn: InnerOptimizerFn | None = None,
+        inner_step_fn: InnerStepFn | None = None,
         inner_reg_fn: InnerRegFn | None = None,
     ) -> None:
         self._meta_opt = meta_optimizer
@@ -81,13 +81,14 @@ class MetaStep:
         self._default_loss_fn = loss_fn
         self._default_inner_steps = inner_steps
         self._default_grad_transforms = grad_transforms
-        self._default_inner_optimizer_fn = inner_optimizer_fn
+        self._default_inner_step_fn = inner_step_fn
         self._inner_reg_fn = inner_reg_fn
 
         self._base_snapshot = save_state(model, optimizer)
         self._adapted: list[AdaptedState] = []
         self._query_losses: list[T.Tensor] = []
         self._weights: list[float] = []
+        self._has_query_losses = False
 
     def task(
         self,
@@ -97,7 +98,7 @@ class MetaStep:
         loss_fn: Callable[..., T.Tensor] | None = None,
         inner_steps: int | None = None,
         grad_transforms: Sequence[GradientTransform] | None = None,
-        inner_optimizer_fn: InnerOptimizerFn | None = None,
+        inner_step_fn: InnerStepFn | None = None,
         query_loss_fn: Callable[[nn.Module, AdaptedState], T.Tensor] | None = None,
         weight: float = 1.0,
     ) -> AdaptedState:
@@ -115,7 +116,7 @@ class MetaStep:
             Per-task inner step count override.
         grad_transforms
             Per-task gradient transform override.
-        inner_optimizer_fn
+        inner_step_fn
             Per-task inner optimizer override.
         query_loss_fn
             Custom query loss callback.  Receives ``(model, adapted)``
@@ -136,7 +137,7 @@ class MetaStep:
             grad_transforms if grad_transforms is not None
             else self._default_grad_transforms
         )
-        task_inner_opt_fn = inner_optimizer_fn or self._default_inner_optimizer_fn
+        task_inner_opt_fn = inner_step_fn or self._default_inner_step_fn
 
         if task_loss_fn is None:
             raise ValueError("loss_fn must be provided either at construction or per-task.")
@@ -148,7 +149,7 @@ class MetaStep:
             self._model, self._optimizer, task_loss_fn,
             support, task_inner_steps,
             grad_transforms=task_grad_transforms,
-            inner_optimizer_fn=task_inner_opt_fn,
+            inner_step_fn=task_inner_opt_fn,
             inner_reg_fn=self._inner_reg_fn,
         )
         self._adapted.append(result)
@@ -169,9 +170,7 @@ class MetaStep:
                 restore_state(self._model, self._optimizer, self._base_snapshot)
 
             self._query_losses.append(weight * q_loss)
-        else:
-            # Reptile: no query loss
-            self._query_losses.append(T.tensor(0.0))
+            self._has_query_losses = True
 
         return result
 
@@ -195,10 +194,7 @@ class MetaStep:
         self._meta_opt.meta_step(
             self._model, self._optimizer, self._base_snapshot,
             self._adapted,
-            query_losses=self._query_losses if any(
-                ql.requires_grad or ql.item() != 0.0
-                for ql in self._query_losses
-            ) else None,
+            query_losses=self._query_losses if self._has_query_losses else None,
         )
 
 

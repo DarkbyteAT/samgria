@@ -5,10 +5,9 @@ gradient-based: ``theta += meta_lr * mean(theta'_i - theta)``.  This
 avoids the need for query sets entirely — the outer signal comes from
 the direction each task's inner loop moved the parameters.
 
-Like FOMAML, the inner loop uses ``create_graph=False`` (no second-order
-gradients needed).  A custom inner optimizer can be supplied via
-``inner_optimizer_fn``; state isolation is guaranteed by
-``save_state`` / ``restore_state``.
+The inner loop shares the same functional implementation as MAML and
+FOMAML (``create_graph=False``), ensuring consistent behaviour for
+GradientTransforms and inner-loop regularisation.
 
 References
 ----------
@@ -25,13 +24,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils import vector_to_parameters
 
-from samgria.meta.protocol import (
-    InnerOptimizerFn,
-    InnerRegFn,
-    apply_inner_reg,
-    capture_base_params,
-)
-from samgria.state import AdaptedState, ParameterSnapshot, restore_state, save_state
+from samgria.meta.maml import functional_adapt
+from samgria.meta.protocol import InnerRegFn, InnerStepFn
+from samgria.state import AdaptedState, ParameterSnapshot
 from samgria.transforms.protocol import GradientTransform
 
 
@@ -44,11 +39,19 @@ class Reptile:
     Parameters
     ----------
     inner_lr
-        Learning rate for inner-loop SGD steps (used when no custom
-        ``inner_optimizer_fn`` is provided).
+        Learning rate for inner-loop SGD steps.
     meta_lr
         Interpolation step size for the outer update.  Controls how far
         outer parameters move toward the mean of adapted parameters.
+
+    Notes
+    -----
+    ``meta_step()`` writes directly into the model's parameters via
+    ``vector_to_parameters`` without calling ``optimizer.step()``.
+    This means the outer optimizer's internal state (momentum, variance,
+    step counts) is **not updated**.  The ``optimizer`` parameter exists
+    for protocol conformance.  Learning rate schedulers attached to the
+    optimizer will not progress.
     """
 
     create_graph: bool = False
@@ -65,45 +68,17 @@ class Reptile:
         support: tuple[T.Tensor, ...],
         inner_steps: int,
         grad_transforms: Sequence[GradientTransform] = (),
-        inner_optimizer_fn: InnerOptimizerFn | None = None,
+        inner_step_fn: InnerStepFn | None = None,
         inner_reg_fn: InnerRegFn | None = None,
     ) -> AdaptedState:
-        """Run k inner optimisation steps on support data, return adapted state.
-
-        Identical to FOMAML's inner loop (create_graph=False).  Saves and
-        restores the caller's state to maintain full isolation.
-        """
-        outer_snapshot = save_state(model, optimizer)
-        base_params = capture_base_params(model, inner_reg_fn)
-
-        inner_opt = (
-            inner_optimizer_fn(model.parameters())
-            if inner_optimizer_fn is not None
-            else None
+        """Run k inner optimisation steps, return adapted state."""
+        return functional_adapt(
+            model, optimizer, loss_fn, support, inner_steps,
+            self.inner_lr, self.create_graph,
+            grad_transforms=grad_transforms,
+            inner_step_fn=inner_step_fn,
+            inner_reg_fn=inner_reg_fn,
         )
-
-        for _ in range(inner_steps):
-            loss = apply_inner_reg(
-                loss_fn(*support), model, inner_reg_fn, base_params,
-            )
-            loss.backward()  # pyright: ignore[reportUnknownMemberType]
-
-            for transform in grad_transforms:
-                transform.apply(model, loss_fn, support)
-
-            if inner_opt is not None:
-                inner_opt.step()
-                inner_opt.zero_grad()
-            else:
-                with T.no_grad():
-                    for p in model.parameters():
-                        if p.grad is not None:
-                            p.data -= self.inner_lr * p.grad
-                model.zero_grad()
-
-        snapshot = save_state(model, optimizer)
-        restore_state(model, optimizer, outer_snapshot)
-        return AdaptedState(snapshot=snapshot)
 
     def meta_step(
         self,
@@ -117,7 +92,8 @@ class Reptile:
 
         Computes ``theta += meta_lr * mean(theta'_i - theta)`` and writes
         the result directly into the model's parameters.  ``query_losses``
-        is accepted for protocol compatibility but ignored.
+        is accepted for protocol compatibility but ignored.  The
+        ``optimizer`` is not stepped — see class docstring.
         """
         outer_params = base_snapshot.params
         mean_diff = T.stack(

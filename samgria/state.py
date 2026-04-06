@@ -114,7 +114,9 @@ def query_forward(
     When ``adapted.live_params`` is populated (MAML), the forward pass
     is routed through ``torch.func.functional_call`` so the computation
     graph flows back through the inner-loop steps.  Otherwise falls back
-    to a plain ``model()`` call after restoring from the snapshot.
+    to a plain ``model()`` call using the model's **currently loaded**
+    parameters — the caller must ensure these are the adapted params
+    (e.g. via ``restore_state``) before calling this function.
 
     Parameters
     ----------
