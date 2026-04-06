@@ -67,6 +67,10 @@ def mutation_optimizer(
     second-order computation graph.  Use this as an escape hatch for
     non-differentiable optimizers (Adam, SGD with momentum, etc.).
 
+    Create a fresh instance per ``adapt()`` call — the wrapper holds
+    internal optimizer state that persists across inner steps but should
+    not leak between tasks.
+
     Parameters
     ----------
     factory

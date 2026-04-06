@@ -44,7 +44,14 @@ def _build_snapshot(
     params: dict[str, T.Tensor],
     optimizer: optim.Optimizer,
 ) -> ParameterSnapshot:
-    """Build a ParameterSnapshot from a functional params dict."""
+    """Build a ParameterSnapshot from a functional params dict.
+
+    The ``optim_state`` is a copy of the outer optimizer's state, which
+    was NOT stepped during the functional inner loop.  This is correct:
+    Reptile reads ``snapshot.params`` for interpolation, and MAML/FOMAML
+    use query losses, not snapshots, for the outer update.  Do not use
+    ``restore_state`` from these snapshots expecting inner-optimizer state.
+    """
     flat = T.cat([p.detach().reshape(-1) for p in params.values()])
     return ParameterSnapshot(
         params=flat,
@@ -92,7 +99,12 @@ def functional_adapt(
         grads = T.autograd.grad(loss, param_values, create_graph=create_graph)
         grad_dict = dict(zip(params.keys(), grads, strict=True))
 
-        # Bridge grads to model.parameters() for GradientTransform compat.
+        # Bridge: sync functional params + grads into stored params so
+        # GradientTransforms (SAM etc.) that read/perturb model.parameters()
+        # operate on the correct values.  Grads are assigned without
+        # detaching so the second-order graph survives when create_graph=True.
+        # SAM's internal loss.backward() will replace p.grad with first-order
+        # grads from its perturbation recompute — that's expected.
         if grad_transforms:
             saved_data = {}
             with T.no_grad():
