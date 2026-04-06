@@ -51,7 +51,8 @@ def sgd(lr: float) -> InnerStepFn:
     """Vanilla SGD inner step: ``p_new = p - lr * grad``."""
 
     def step(
-        params: dict[str, T.Tensor], grads: dict[str, T.Tensor],
+        params: dict[str, T.Tensor],
+        grads: dict[str, T.Tensor],
     ) -> dict[str, T.Tensor]:
         return {k: params[k] - lr * grads[k] for k in params}
 
@@ -81,21 +82,18 @@ def mutation_optimizer(
     -------
     ::
 
-        adapt(..., inner_step_fn=mutation_optimizer(
-            lambda p: optim.Adam(p, lr=0.01)
-        ))
+        adapt(..., inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)))
     """
     opt_holder: list[optim.Optimizer] = []
     param_holder: list[dict[str, nn.Parameter]] = []
 
     def step(
-        params: dict[str, T.Tensor], grads: dict[str, T.Tensor],
+        params: dict[str, T.Tensor],
+        grads: dict[str, T.Tensor],
     ) -> dict[str, T.Tensor]:
         # Lazy init: create nn.Parameters + optimizer on first call
         if not param_holder:
-            nn_params = {
-                k: nn.Parameter(v.detach().clone()) for k, v in params.items()
-            }
+            nn_params = {k: nn.Parameter(v.detach().clone()) for k, v in params.items()}
             param_holder.append(nn_params)
             opt_holder.append(factory(nn_params.values()))
         else:

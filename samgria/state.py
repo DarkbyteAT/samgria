@@ -151,10 +151,7 @@ def save_state(model: nn.Module, optimizer: optim.Optimizer) -> ParameterSnapsho
     """
     params = parameters_to_vector(model.parameters()).detach().clone()
     optim_state = copy.deepcopy(optimizer.state_dict())
-    buffers = {
-        name: buf.detach().clone()
-        for name, buf in model.named_buffers()
-    }
+    buffers = {name: buf.detach().clone() for name, buf in model.named_buffers()}
     return ParameterSnapshot(
         params=params,
         numel=params.numel(),
@@ -212,9 +209,7 @@ def restore_state(
             parts.append(f"snapshot has buffers not in model: {missing}")
         if extra:
             parts.append(f"model has buffers not in snapshot: {extra}")
-        raise ValueError(
-            f"Buffer mismatch between model and snapshot. {'; '.join(parts)}"
-        )
+        raise ValueError(f"Buffer mismatch between model and snapshot. {'; '.join(parts)}")
 
     # Restore parameters and clear stale gradients.  Without this,
     # gradients from a previous inner loop could leak into the next

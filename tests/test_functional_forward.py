@@ -113,10 +113,7 @@ def test_graph_flows_through_functional_forward() -> None:
     """Gradients flow through functional_forward's output."""
     # Given a model and graph-connected params
     model = _make_mlp()
-    params = {
-        k: v.clone().requires_grad_(True)
-        for k, v in model.named_parameters()
-    }
+    params = {k: v.clone().requires_grad_(True) for k, v in model.named_parameters()}
     x = T.randn(3, 2)
 
     # When we compute a loss inside the context

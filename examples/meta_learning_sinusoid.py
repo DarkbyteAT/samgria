@@ -58,6 +58,7 @@ def fresh_model() -> tuple[nn.Sequential, optim.Adam]:
 def loss_fn(model: nn.Module):
     def fn(*batch: T.Tensor) -> T.Tensor:
         return ((model(batch[0]) - batch[1]) ** 2).mean()
+
     return fn
 
 
@@ -82,8 +83,9 @@ def render_loss() -> None:
     fig = plt.figure(figsize=(8, 5), dpi=150)
     for name, losses in curves.items():
         style = "--" if name == "Baseline" else "-"
-        sns.lineplot(x=eval_steps[:len(losses)], y=losses,
-                     label=name, color=PALETTE[name], linewidth=2, linestyle=style)
+        sns.lineplot(
+            x=eval_steps[: len(losses)], y=losses, label=name, color=PALETTE[name], linewidth=2, linestyle=style
+        )
     plt.xlabel("Outer Step")
     plt.ylabel("Post-Adaptation MSE")
     plt.yscale("log")

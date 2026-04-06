@@ -32,7 +32,8 @@ __all__ = ["functional_forward"]
 
 @contextmanager
 def functional_forward(
-    model: nn.Module, params: dict[str, T.Tensor],
+    model: nn.Module,
+    params: dict[str, T.Tensor],
 ) -> Iterator[None]:
     """Temporarily route ``model(x)`` through ``functional_call``.
 

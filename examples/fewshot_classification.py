@@ -75,8 +75,10 @@ def sample_task() -> tuple[tuple[T.Tensor, T.Tensor], tuple[T.Tensor, T.Tensor]]
 def fresh_model() -> tuple[nn.Sequential, optim.Adam]:
     T.manual_seed(0)
     m = nn.Sequential(
-        nn.Linear(2, 40), nn.ReLU(),
-        nn.Linear(40, 40), nn.ReLU(),
+        nn.Linear(2, 40),
+        nn.ReLU(),
+        nn.Linear(40, 40),
+        nn.ReLU(),
         nn.Linear(40, 1),
     ).to(DEVICE)
     return m, optim.Adam(m.parameters(), lr=OUTER_LR)
@@ -87,6 +89,7 @@ def bce_loss(model: nn.Module):
         x, y = batch[0], batch[1]
         logits = model(x)
         return nn.functional.binary_cross_entropy_with_logits(logits, y)
+
     return fn
 
 
@@ -129,8 +132,9 @@ def render() -> None:
     fig = plt.figure(figsize=(8, 5), dpi=150)
     for name, losses in loss_curves.items():
         style = "--" if name == "Baseline" else "-"
-        sns.lineplot(x=eval_steps[:len(losses)], y=losses,
-                     label=name, color=PALETTE[name], linewidth=2, linestyle=style)
+        sns.lineplot(
+            x=eval_steps[: len(losses)], y=losses, label=name, color=PALETTE[name], linewidth=2, linestyle=style
+        )
     plt.xlabel("Outer Step")
     plt.ylabel("Query BCE Loss")
     plt.title("Few-Shot Classification: Query Loss", fontweight="bold")
@@ -143,8 +147,7 @@ def render() -> None:
     fig = plt.figure(figsize=(8, 5), dpi=150)
     for name, accs in acc_curves.items():
         style = "--" if name == "Baseline" else "-"
-        sns.lineplot(x=eval_steps[:len(accs)], y=accs,
-                     label=name, color=PALETTE[name], linewidth=2, linestyle=style)
+        sns.lineplot(x=eval_steps[: len(accs)], y=accs, label=name, color=PALETTE[name], linewidth=2, linestyle=style)
     plt.xlabel("Outer Step")
     plt.ylabel("Query Accuracy")
     plt.ylim(0.4, 1.0)

@@ -82,10 +82,7 @@ def functional_adapt(
     base_params = capture_base_params(model, inner_reg_fn)
     step_fn = inner_step_fn or sgd(inner_lr)
 
-    params: dict[str, T.Tensor] = {
-        k: v.clone().requires_grad_(True)
-        for k, v in model.named_parameters()
-    }
+    params: dict[str, T.Tensor] = {k: v.clone().requires_grad_(True) for k, v in model.named_parameters()}
 
     for _ in range(inner_steps):
         with functional_forward(model, params):
@@ -128,10 +125,7 @@ def functional_adapt(
 
         params = step_fn(params, grad_dict)
         # Ensure params require grad for the next iteration's autograd.grad
-        params = {
-            k: v if v.requires_grad else v.requires_grad_(True)
-            for k, v in params.items()
-        }
+        params = {k: v if v.requires_grad else v.requires_grad_(True) for k, v in params.items()}
 
     snapshot = _build_snapshot(params, optimizer)
     restore_state(model, optimizer, outer_snapshot)
@@ -149,15 +143,9 @@ def _gradient_meta_step(
 ) -> None:
     """Shared outer-step for MAML and FOMAML."""
     if query_losses is None:
-        raise ValueError(
-            f"{name}.meta_step() requires query_losses "
-            f"(one per adapted state)."
-        )
+        raise ValueError(f"{name}.meta_step() requires query_losses (one per adapted state).")
     if len(query_losses) != len(adapted):
-        raise ValueError(
-            f"Expected {len(adapted)} query losses, "
-            f"got {len(query_losses)}."
-        )
+        raise ValueError(f"Expected {len(adapted)} query losses, got {len(query_losses)}.")
 
     optimizer.zero_grad()
     total_loss = T.stack(list(query_losses)).mean()
@@ -193,8 +181,13 @@ class MAML:
     ) -> AdaptedState:
         """Run k differentiable inner steps, return adapted state."""
         return functional_adapt(
-            model, optimizer, loss_fn, support, inner_steps,
-            self.inner_lr, self.create_graph,
+            model,
+            optimizer,
+            loss_fn,
+            support,
+            inner_steps,
+            self.inner_lr,
+            self.create_graph,
             grad_transforms=grad_transforms,
             inner_step_fn=inner_step_fn,
             inner_reg_fn=inner_reg_fn,
@@ -240,8 +233,13 @@ class FOMAML:
     ) -> AdaptedState:
         """Run k inner SGD steps on support data, return adapted state."""
         return functional_adapt(
-            model, optimizer, loss_fn, support, inner_steps,
-            self.inner_lr, self.create_graph,
+            model,
+            optimizer,
+            loss_fn,
+            support,
+            inner_steps,
+            self.inner_lr,
+            self.create_graph,
             grad_transforms=grad_transforms,
             inner_step_fn=inner_step_fn,
             inner_reg_fn=inner_reg_fn,

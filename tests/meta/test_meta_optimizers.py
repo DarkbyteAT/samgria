@@ -45,9 +45,7 @@ def _make_mlp() -> nn.Sequential:
     return nn.Sequential(nn.Linear(1, 40), nn.ReLU(), nn.Linear(40, 1))
 
 
-def _sinusoid_task(
-    amplitude: float, phase: float, n_samples: int = 10
-) -> tuple[T.Tensor, T.Tensor]:
+def _sinusoid_task(amplitude: float, phase: float, n_samples: int = 10) -> tuple[T.Tensor, T.Tensor]:
     """Generate a sinusoid regression task: y = amplitude * sin(x + phase)."""
     x = T.linspace(-5.0, 5.0, n_samples).unsqueeze(1)
     y = amplitude * T.sin(x + phase)
@@ -157,9 +155,7 @@ def test_maml_adapted_state_has_live_params() -> None:
     assert isinstance(result.live_params, dict)
     # And the tensors have grad_fn (they're part of the computation graph)
     for name, p in result.live_params.items():
-        assert p.grad_fn is not None, (
-            f"live_params['{name}'] has no grad_fn — graph was severed"
-        )
+        assert p.grad_fn is not None, f"live_params['{name}'] has no grad_fn — graph was severed"
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +225,7 @@ def test_adapt_does_not_modify_outer_optimizer_state() -> None:
             before = optim_state_before["state"][key][buf_name]
             after = optim_state_after["state"][key][buf_name]
             if isinstance(before, T.Tensor):
-                assert T.equal(before, after), (
-                    f"Optimizer state changed: param {key}, buffer {buf_name}"
-                )
+                assert T.equal(before, after), f"Optimizer state changed: param {key}, buffer {buf_name}"
             else:
                 assert before == after
 
@@ -287,8 +281,13 @@ def test_adapt_with_mutation_optimizer() -> None:
 
     # When adapt() runs with a mutation_optimizer wrapping Adam
     from samgria.meta.protocol import mutation_optimizer
+
     result = fomaml.adapt(
-        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5,
+        model,
+        optimizer,
+        _mse_loss_fn(model),
+        (x, y),
+        inner_steps=5,
         inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)),
     )
 
@@ -314,8 +313,13 @@ def test_custom_inner_step_produces_different_trajectory() -> None:
 
     # And adapt with mutation_optimizer wrapping Adam
     from samgria.meta.protocol import mutation_optimizer
+
     snap_adam = fomaml.adapt(
-        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5,
+        model,
+        optimizer,
+        _mse_loss_fn(model),
+        (x, y),
+        inner_steps=5,
         inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)),
     )
 
@@ -334,8 +338,13 @@ def test_maml_with_custom_inner_step_fn() -> None:
 
     # A differentiable step function (graph flows through)
     from samgria.meta.protocol import sgd
+
     result = maml.adapt(
-        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3,
+        model,
+        optimizer,
+        _mse_loss_fn(model),
+        (x, y),
+        inner_steps=3,
         inner_step_fn=sgd(lr=0.05),  # different LR than default
     )
 
@@ -410,21 +419,27 @@ def test_maml_and_fomaml_produce_different_outer_gradients() -> None:
     # When MAML adapts and computes query loss with graph
     save_state(model_maml, opt_maml)
     result_maml = maml.adapt(
-        model_maml, opt_maml, _mse_loss_fn(model_maml), (x_s, y_s), inner_steps=5,
+        model_maml,
+        opt_maml,
+        _mse_loss_fn(model_maml),
+        (x_s, y_s),
+        inner_steps=5,
     )
     pred_maml = query_forward(model_maml, result_maml, x_q)
     ql_maml = ((pred_maml - y_q) ** 2).mean()
 
     opt_maml.zero_grad()
     ql_maml.backward()
-    maml_grads = parameters_to_vector(
-        [p.grad for p in model_maml.parameters() if p.grad is not None]
-    ).clone()
+    maml_grads = parameters_to_vector([p.grad for p in model_maml.parameters() if p.grad is not None]).clone()
 
     # And FOMAML adapts and computes query loss without graph
     save_state(model_fomaml, opt_fomaml)
     result_fomaml = fomaml.adapt(
-        model_fomaml, opt_fomaml, _mse_loss_fn(model_fomaml), (x_s, y_s), inner_steps=5,
+        model_fomaml,
+        opt_fomaml,
+        _mse_loss_fn(model_fomaml),
+        (x_s, y_s),
+        inner_steps=5,
     )
     # For FOMAML, restore adapted params to compute query loss
     restore_state(model_fomaml, opt_fomaml, result_fomaml.snapshot)
@@ -432,14 +447,11 @@ def test_maml_and_fomaml_produce_different_outer_gradients() -> None:
 
     opt_fomaml.zero_grad()
     ql_fomaml.backward()
-    fomaml_grads = parameters_to_vector(
-        [p.grad for p in model_fomaml.parameters() if p.grad is not None]
-    ).clone()
+    fomaml_grads = parameters_to_vector([p.grad for p in model_fomaml.parameters() if p.grad is not None]).clone()
 
     # Then the outer gradients differ (second-order terms in MAML)
     assert not T.allclose(maml_grads, fomaml_grads, atol=1e-6), (
-        "MAML and FOMAML produced identical outer gradients — "
-        "second-order graph is not flowing through"
+        "MAML and FOMAML produced identical outer gradients — second-order graph is not flowing through"
     )
 
 
@@ -527,17 +539,11 @@ def test_reptile_outer_update_interpolates_toward_adapted_params() -> None:
     new_params = parameters_to_vector(model.parameters()).detach()
 
     # Then the update direction correlates with mean(adapted - outer)
-    mean_diff = T.stack(
-        [a.snapshot.params - outer_params for a in adapted]
-    ).mean(dim=0)
+    mean_diff = T.stack([a.snapshot.params - outer_params for a in adapted]).mean(dim=0)
     actual_update = new_params - outer_params
 
-    cosine_sim = T.nn.functional.cosine_similarity(
-        actual_update.unsqueeze(0), mean_diff.unsqueeze(0)
-    )
-    assert cosine_sim.item() > 0.9, (
-        f"Reptile update direction diverges: cosine_sim={cosine_sim.item():.4f}"
-    )
+    cosine_sim = T.nn.functional.cosine_similarity(actual_update.unsqueeze(0), mean_diff.unsqueeze(0))
+    assert cosine_sim.item() > 0.9, f"Reptile update direction diverges: cosine_sim={cosine_sim.item():.4f}"
 
 
 # ---------------------------------------------------------------------------
@@ -557,12 +563,20 @@ def test_fomaml_with_sam_produces_different_adapted_params() -> None:
     # When we adapt without SAM
     fomaml = FOMAML(inner_lr=0.01)
     snap_plain = fomaml.adapt(
-        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5,
+        model,
+        optimizer,
+        _mse_loss_fn(model),
+        (x, y),
+        inner_steps=5,
     )
 
     # And adapt with SAM (same starting point due to state isolation)
     snap_sam = fomaml.adapt(
-        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=5,
+        model,
+        optimizer,
+        _mse_loss_fn(model),
+        (x, y),
+        inner_steps=5,
         grad_transforms=[SAM(rho=0.05)],
     )
 
@@ -581,7 +595,11 @@ def test_maml_with_sam_runs_without_error() -> None:
 
     # When adapt() runs with SAM — it should not raise
     result = maml.adapt(
-        model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3,
+        model,
+        optimizer,
+        _mse_loss_fn(model),
+        (x, y),
+        inner_steps=3,
         grad_transforms=[SAM(rho=0.05)],
     )
 
@@ -614,8 +632,7 @@ def test_query_forward_with_live_params_uses_functional_call() -> None:
     with T.no_grad():
         outer_pred = model(x_q)
     assert not T.allclose(pred.detach(), outer_pred, atol=1e-4), (
-        "query_forward produced same output as outer model — "
-        "functional_call is not routing through adapted params"
+        "query_forward produced same output as outer model — functional_call is not routing through adapted params"
     )
 
 
@@ -665,8 +682,11 @@ def test_fomaml_reduces_loss_on_held_out_sinusoid() -> None:
 
             x_support, y_support = _sinusoid_task(amp, phase, n_samples=10)
             result = fomaml.adapt(
-                model, outer_optimizer, _mse_loss_fn(model),
-                (x_support, y_support), inner_steps=1,
+                model,
+                outer_optimizer,
+                _mse_loss_fn(model),
+                (x_support, y_support),
+                inner_steps=1,
             )
             adapted.append(result)
 
@@ -678,7 +698,10 @@ def test_fomaml_reduces_loss_on_held_out_sinusoid() -> None:
             restore_state(model, outer_optimizer, base_snapshot)
 
         fomaml.meta_step(
-            model, outer_optimizer, base_snapshot, adapted,
+            model,
+            outer_optimizer,
+            base_snapshot,
+            adapted,
             query_losses=query_losses,
         )
 
@@ -691,16 +714,17 @@ def test_fomaml_reduces_loss_on_held_out_sinusoid() -> None:
 
     x_support, y_support = _sinusoid_task(test_amp, test_phase, n_samples=10)
     result = fomaml.adapt(
-        model, outer_optimizer, _mse_loss_fn(model),
-        (x_support, y_support), inner_steps=5,
+        model,
+        outer_optimizer,
+        _mse_loss_fn(model),
+        (x_support, y_support),
+        inner_steps=5,
     )
     restore_state(model, outer_optimizer, result.snapshot)
     with T.no_grad():
         loss_after = ((model(x_test) - y_test) ** 2).mean().item()
 
-    assert loss_after < loss_before, (
-        f"FOMAML failed to reduce loss: before={loss_before:.4f}, after={loss_after:.4f}"
-    )
+    assert loss_after < loss_before, f"FOMAML failed to reduce loss: before={loss_before:.4f}, after={loss_after:.4f}"
 
 
 @pytest.mark.integration
@@ -722,8 +746,11 @@ def test_reptile_reduces_loss_on_held_out_sinusoid() -> None:
 
             x_support, y_support = _sinusoid_task(amp, phase, n_samples=10)
             result = reptile.adapt(
-                model, outer_optimizer, _mse_loss_fn(model),
-                (x_support, y_support), inner_steps=5,
+                model,
+                outer_optimizer,
+                _mse_loss_fn(model),
+                (x_support, y_support),
+                inner_steps=5,
             )
             adapted.append(result)
 
@@ -738,16 +765,17 @@ def test_reptile_reduces_loss_on_held_out_sinusoid() -> None:
 
     x_support, y_support = _sinusoid_task(test_amp, test_phase, n_samples=10)
     result = reptile.adapt(
-        model, outer_optimizer, _mse_loss_fn(model),
-        (x_support, y_support), inner_steps=10,
+        model,
+        outer_optimizer,
+        _mse_loss_fn(model),
+        (x_support, y_support),
+        inner_steps=10,
     )
     restore_state(model, outer_optimizer, result.snapshot)
     with T.no_grad():
         loss_after = ((model(x_test) - y_test) ** 2).mean().item()
 
-    assert loss_after < loss_before, (
-        f"Reptile failed to reduce loss: before={loss_before:.4f}, after={loss_after:.4f}"
-    )
+    assert loss_after < loss_before, f"Reptile failed to reduce loss: before={loss_before:.4f}, after={loss_after:.4f}"
 
 
 @pytest.mark.integration
@@ -778,7 +806,10 @@ def test_multi_task_meta_step_produces_parameter_update() -> None:
 
     params_before_step = parameters_to_vector(model.parameters()).detach().clone()
     fomaml.meta_step(
-        model, optimizer, base_snapshot, adapted,
+        model,
+        optimizer,
+        base_snapshot,
+        adapted,
         query_losses=query_losses,
     )
     params_after_step = parameters_to_vector(model.parameters()).detach()

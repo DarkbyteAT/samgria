@@ -33,6 +33,7 @@ from samgria.utils.functional import functional_forward
 
 __all__ = ["MetaStep", "meta_step"]
 
+
 class MetaStep:
     """Builder for one outer meta-learning step.
 
@@ -133,10 +134,7 @@ class MetaStep:
         # Resolve per-task overrides
         task_loss_fn = loss_fn or self._default_loss_fn
         task_inner_steps = inner_steps or self._default_inner_steps
-        task_grad_transforms = (
-            grad_transforms if grad_transforms is not None
-            else self._default_grad_transforms
-        )
+        task_grad_transforms = grad_transforms if grad_transforms is not None else self._default_grad_transforms
         task_inner_opt_fn = inner_step_fn or self._default_inner_step_fn
 
         if task_loss_fn is None:
@@ -146,8 +144,11 @@ class MetaStep:
 
         # Adapt
         result = self._meta_opt.adapt(
-            self._model, self._optimizer, task_loss_fn,
-            support, task_inner_steps,
+            self._model,
+            self._optimizer,
+            task_loss_fn,
+            support,
+            task_inner_steps,
             grad_transforms=task_grad_transforms,
             inner_step_fn=task_inner_opt_fn,
             inner_reg_fn=self._inner_reg_fn,
@@ -183,16 +184,15 @@ class MetaStep:
             If no tasks have been collected.
         """
         if not self._adapted:
-            raise ValueError(
-                "MetaStep.step() called with zero tasks. "
-                "Call .task() at least once before .step()."
-            )
+            raise ValueError("MetaStep.step() called with zero tasks. Call .task() at least once before .step().")
 
         # Restore base state before outer update
         restore_state(self._model, self._optimizer, self._base_snapshot)
 
         self._meta_opt.meta_step(
-            self._model, self._optimizer, self._base_snapshot,
+            self._model,
+            self._optimizer,
+            self._base_snapshot,
             self._adapted,
             query_losses=self._query_losses if self._has_query_losses else None,
         )

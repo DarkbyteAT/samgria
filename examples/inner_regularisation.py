@@ -59,6 +59,7 @@ def fresh_model() -> tuple[nn.Sequential, optim.Adam]:
 def loss_fn(model: nn.Module):
     def fn(*batch: T.Tensor) -> T.Tensor:
         return ((model(batch[0]) - batch[1]) ** 2).mean()
+
     return fn
 
 
@@ -75,10 +76,8 @@ def eval_adaptation(model, opt, algo) -> float:
 
 def l2_reg(lam: float):
     def reg(current: dict[str, T.Tensor], base: dict[str, T.Tensor]) -> T.Tensor:
-        return lam * T.stack([
-            ((c - b) ** 2).sum()
-            for c, b in zip(current.values(), base.values(), strict=True)
-        ]).sum()
+        return lam * T.stack([((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=True)]).sum()
+
     return reg
 
 
@@ -99,8 +98,7 @@ def render() -> None:
     ]:
         fig = plt.figure(figsize=(8, 5), dpi=150)
         for i, (lam, losses) in enumerate(curves.items()):
-            sns.lineplot(x=eval_steps[:len(losses)], y=losses,
-                         label=f"λ={lam}", color=palette[i], linewidth=2)
+            sns.lineplot(x=eval_steps[: len(losses)], y=losses, label=f"λ={lam}", color=palette[i], linewidth=2)
         plt.xlabel("Outer Step")
         plt.ylabel("Post-Adaptation MSE")
         plt.yscale("log")

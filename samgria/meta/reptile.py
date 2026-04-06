@@ -73,8 +73,13 @@ class Reptile:
     ) -> AdaptedState:
         """Run k inner optimisation steps, return adapted state."""
         return functional_adapt(
-            model, optimizer, loss_fn, support, inner_steps,
-            self.inner_lr, self.create_graph,
+            model,
+            optimizer,
+            loss_fn,
+            support,
+            inner_steps,
+            self.inner_lr,
+            self.create_graph,
             grad_transforms=grad_transforms,
             inner_step_fn=inner_step_fn,
             inner_reg_fn=inner_reg_fn,
@@ -96,9 +101,7 @@ class Reptile:
         ``optimizer`` is not stepped — see class docstring.
         """
         outer_params = base_snapshot.params
-        mean_diff = T.stack(
-            [a.snapshot.params - outer_params for a in adapted]
-        ).mean(dim=0)
+        mean_diff = T.stack([a.snapshot.params - outer_params for a in adapted]).mean(dim=0)
 
         new_params = outer_params + self.meta_lr * mean_diff
         vector_to_parameters(new_params, model.parameters())

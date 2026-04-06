@@ -35,7 +35,9 @@ def _make_mlp() -> nn.Sequential:
 
 
 def _sinusoid_task(
-    amplitude: float, phase: float, n: int = 10,
+    amplitude: float,
+    phase: float,
+    n: int = 10,
 ) -> tuple[T.Tensor, T.Tensor]:
     x = T.linspace(-5.0, 5.0, n).unsqueeze(1)
     y = amplitude * T.sin(x + phase)
@@ -46,6 +48,7 @@ def _mse_loss_fn(model: nn.Module):
     def loss_fn(*support: T.Tensor) -> T.Tensor:
         x, y = support[0], support[1]
         return ((model(x) - y) ** 2).mean()
+
     return loss_fn
 
 
@@ -103,6 +106,7 @@ def test_task_returns_adapted_state() -> None:
 
     # Then the result is an AdaptedState
     from samgria.state import AdaptedState
+
     assert isinstance(result, AdaptedState)
 
 
@@ -127,13 +131,13 @@ def test_fomaml_and_maml_produce_different_updates_via_meta_step() -> None:
     x_q, y_q = _sinusoid_task(2.0, 1.0, n=5)
 
     # When MAML runs one outer step
-    with meta_step(MAML(inner_lr=0.1), model_maml, opt_maml,
-                   loss_fn=_mse_loss_fn(model_maml), inner_steps=5) as ms:
+    with meta_step(MAML(inner_lr=0.1), model_maml, opt_maml, loss_fn=_mse_loss_fn(model_maml), inner_steps=5) as ms:
         ms.task(support=(x_s, y_s), query=(x_q, y_q))
 
     # And FOMAML runs one outer step
-    with meta_step(FOMAML(inner_lr=0.1), model_fomaml, opt_fomaml,
-                   loss_fn=_mse_loss_fn(model_fomaml), inner_steps=5) as ms:
+    with meta_step(
+        FOMAML(inner_lr=0.1), model_fomaml, opt_fomaml, loss_fn=_mse_loss_fn(model_fomaml), inner_steps=5
+    ) as ms:
         ms.task(support=(x_s, y_s), query=(x_q, y_q))
 
     # Then the resulting parameters differ
@@ -199,8 +203,7 @@ def test_per_task_grad_transforms_override() -> None:
 
     with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=5) as ms:
         result_plain = ms.task(support=(x_s, y_s), query=(x_q, y_q))
-        result_sam = ms.task(support=(x_s, y_s), query=(x_q, y_q),
-                             grad_transforms=[SAM(rho=0.05)])
+        result_sam = ms.task(support=(x_s, y_s), query=(x_q, y_q), grad_transforms=[SAM(rho=0.05)])
 
     assert not T.equal(result_plain.snapshot.params, result_sam.snapshot.params)
 
@@ -227,14 +230,12 @@ def test_task_weighting_affects_outer_update() -> None:
     task_b = (_sinusoid_task(5.0, 1.0), _sinusoid_task(5.0, 1.0, n=5))
 
     # When uniform weights
-    with meta_step(fomaml, model_uniform, opt_uniform,
-                   loss_fn=_mse_loss_fn(model_uniform), inner_steps=3) as ms:
+    with meta_step(fomaml, model_uniform, opt_uniform, loss_fn=_mse_loss_fn(model_uniform), inner_steps=3) as ms:
         ms.task(support=task_a[0], query=task_a[1])
         ms.task(support=task_b[0], query=task_b[1])
 
     # And heavily weighted toward task_b
-    with meta_step(fomaml, model_weighted, opt_weighted,
-                   loss_fn=_mse_loss_fn(model_weighted), inner_steps=3) as ms:
+    with meta_step(fomaml, model_weighted, opt_weighted, loss_fn=_mse_loss_fn(model_weighted), inner_steps=3) as ms:
         ms.task(support=task_a[0], query=task_a[1], weight=0.1)
         ms.task(support=task_b[0], query=task_b[1], weight=10.0)
 
@@ -266,13 +267,11 @@ def test_inner_reg_fn_affects_adapted_params() -> None:
 
     # And adapt with L2 regularisation toward base params
     def l2_reg(current_params: dict[str, T.Tensor], base_params: dict[str, T.Tensor]) -> T.Tensor:
-        return T.stack([
-            ((c - b) ** 2).sum()
-            for c, b in zip(current_params.values(), base_params.values(), strict=False)
-        ]).sum()
+        return T.stack(
+            [((c - b) ** 2).sum() for c, b in zip(current_params.values(), base_params.values(), strict=False)]
+        ).sum()
 
-    with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=5,
-                   inner_reg_fn=l2_reg) as ms:
+    with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=5, inner_reg_fn=l2_reg) as ms:
         result_reg = ms.task(support=(x_s, y_s), query=(x_q, y_q))
 
     # Then the adapted params differ (regularisation pulled toward base)
@@ -297,12 +296,11 @@ def test_inner_reg_fn_pulls_toward_base() -> None:
 
     # And with strong L2 reg
     def strong_l2(current: dict[str, T.Tensor], base: dict[str, T.Tensor]) -> T.Tensor:
-        return 10.0 * T.stack([
-            ((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=False)
-        ]).sum()
+        return (
+            10.0 * T.stack([((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=False)]).sum()
+        )
 
-    with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10,
-                   inner_reg_fn=strong_l2) as ms:
+    with meta_step(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10, inner_reg_fn=strong_l2) as ms:
         result_reg = ms.task(support=(x_s, y_s), query=(x_q, y_q))
 
     # Then regularised params are closer to base
@@ -324,17 +322,16 @@ def test_inner_reg_fn_works_with_maml() -> None:
     x_q, y_q = _sinusoid_task(2.0, 1.0, n=5)
 
     def strong_l2(current: dict[str, T.Tensor], base: dict[str, T.Tensor]) -> T.Tensor:
-        return 10.0 * T.stack([
-            ((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=True)
-        ]).sum()
+        return (
+            10.0 * T.stack([((c - b) ** 2).sum() for c, b in zip(current.values(), base.values(), strict=True)]).sum()
+        )
 
     # When we adapt without reg
     with meta_step(maml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10) as ms:
         result_plain = ms.task(support=(x_s, y_s), query=(x_q, y_q))
 
     # And with strong L2 reg
-    with meta_step(maml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10,
-                   inner_reg_fn=strong_l2) as ms:
+    with meta_step(maml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=10, inner_reg_fn=strong_l2) as ms:
         result_reg = ms.task(support=(x_s, y_s), query=(x_q, y_q))
 
     # Then regularised params are closer to base
@@ -378,8 +375,8 @@ def test_meta_step_multi_task_reduces_loss() -> None:
 
     # The outer step itself isn't adaptation — let's use adapt directly
     from samgria.state import restore_state
-    result = fomaml.adapt(model, optimizer, _mse_loss_fn(model),
-                          _sinusoid_task(3.0, 1.0), inner_steps=5)
+
+    result = fomaml.adapt(model, optimizer, _mse_loss_fn(model), _sinusoid_task(3.0, 1.0), inner_steps=5)
     restore_state(model, optimizer, result.snapshot)
 
     with T.no_grad():
