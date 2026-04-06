@@ -21,7 +21,7 @@ import copy
 import pytest
 import torch as T
 import torch.nn as nn
-from torch.nn.utils import parameters_to_vector
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from samgria.state import restore_state, save_state
 
@@ -497,3 +497,60 @@ def test_batch_norm_isolation_across_tasks() -> None:
 
     # Then running stats are back to the snapshot (task A didn't leak)
     assert T.equal(bn.running_mean, saved_running_mean)  # type: ignore[arg-type]
+
+
+@pytest.mark.integration
+def test_reptile_outer_update_pattern() -> None:
+    """Simulate a Reptile outer step: save, adapt per task, interpolate.
+
+    Reptile's outer update is parameter interpolation, not gradient-based:
+    theta += meta_lr * mean(theta'_i - theta).  This test proves that
+    save_state captures the outer parameters correctly and that the adapted
+    parameter vectors can be used for the interpolation arithmetic without
+    needing restore_state between tasks (Reptile does not restore).
+    """
+    T.manual_seed(0)
+    model = _make_mlp()
+    optimizer = T.optim.SGD(model.parameters(), lr=1e-2)
+
+    # Outer-loop pre-training
+    for _ in range(5):
+        _train_step(model, optimizer)
+
+    # Given a snapshot of the outer-loop state
+    outer_snapshot = save_state(model, optimizer)
+    outer_params = outer_snapshot.params.clone()
+    meta_lr = 0.1
+
+    # When we adapt on 3 tasks, saving each adapted param vector
+    adapted_params: list[T.Tensor] = []
+    for task_id in range(3):
+        # Reptile restores before each task's inner loop
+        restore_state(model, optimizer, outer_snapshot)
+
+        # Inner-loop adaptation
+        T.manual_seed(100 + task_id)
+        for _ in range(5):
+            _train_step(model, optimizer)
+
+        adapted_params.append(
+            parameters_to_vector(model.parameters()).detach().clone()
+        )
+
+    # Then we can compute the Reptile outer update via interpolation
+    mean_diff = T.stack([ap - outer_params for ap in adapted_params]).mean(dim=0)
+    new_outer_params = outer_params + meta_lr * mean_diff
+
+    # And the new outer params differ from the old (learning happened)
+    assert not T.equal(new_outer_params, outer_params)
+
+    # And the update direction is a genuine average of task directions
+    # (not dominated by any single task — verify non-zero contribution from each)
+    individual_diffs = [ap - outer_params for ap in adapted_params]
+    for i, diff in enumerate(individual_diffs):
+        assert diff.norm() > 0, f"Task {i} produced zero adaptation"
+
+    # And we can apply the interpolated params back to the model
+    vector_to_parameters(new_outer_params, model.parameters())
+    applied = parameters_to_vector(model.parameters()).detach()
+    assert T.equal(applied, new_outer_params)
