@@ -37,16 +37,23 @@ Design decisions:
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch as T
 import torch.nn as nn
 import torch.optim as optim
+from torch.func import functional_call
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 
-__all__ = ["ParameterSnapshot", "restore_state", "save_state"]
+__all__ = [
+    "AdaptedState",
+    "ParameterSnapshot",
+    "query_forward",
+    "restore_state",
+    "save_state",
+]
 
 
 @dataclass(frozen=True)
@@ -71,6 +78,56 @@ class ParameterSnapshot:
     numel: int
     optim_state: dict[str, Any]
     buffers: dict[str, T.Tensor]
+
+
+@dataclass(frozen=True)
+class AdaptedState:
+    """State produced by inner-loop adaptation.
+
+    Composes a detached ``ParameterSnapshot`` (for state management,
+    restore, and Reptile-style interpolation) with an optional dict of
+    graph-connected parameter tensors (for MAML's second-order outer
+    update via ``functional_call``).
+
+    Attributes
+    ----------
+    snapshot
+        Immutable, detached checkpoint of the adapted model state.
+    live_params
+        Named parameter tensors that retain the computation graph
+        through the inner-loop steps.  Present for second-order methods
+        (MAML); ``None`` for first-order methods (FOMAML, Reptile).
+    """
+
+    snapshot: ParameterSnapshot
+    live_params: dict[str, T.Tensor] | None = field(default=None)
+
+
+def query_forward(
+    model: nn.Module,
+    adapted: AdaptedState,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run a forward pass through adapted parameters.
+
+    When ``adapted.live_params`` is populated (MAML), the forward pass
+    is routed through ``torch.func.functional_call`` so the computation
+    graph flows back through the inner-loop steps.  Otherwise falls back
+    to a plain ``model()`` call after restoring from the snapshot.
+
+    Parameters
+    ----------
+    model
+        The model whose forward method to call.
+    adapted
+        The adapted state from ``MetaOptimizer.adapt()``.
+    *args, **kwargs
+        Forwarded to the model's forward method.
+    """
+    if adapted.live_params is not None:
+        return functional_call(model, adapted.live_params, args, kwargs)
+    return model(*args, **kwargs)
 
 
 def save_state(model: nn.Module, optimizer: optim.Optimizer) -> ParameterSnapshot:
