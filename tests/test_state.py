@@ -18,13 +18,12 @@ from __future__ import annotations
 
 import copy
 
+import pytest
 import torch as T
 import torch.nn as nn
 from torch.nn.utils import parameters_to_vector
 
-import pytest
-
-from samgria.state import ParameterSnapshot, restore_state, save_state
+from samgria.state import restore_state, save_state
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +126,7 @@ def test_round_trip_preserves_parameters() -> None:
 
     # Then parameters match the snapshot
     restored = parameters_to_vector(model.parameters()).detach()
-    assert T.allclose(restored, snapshot.params, atol=1e-7)
+    assert T.equal(restored, snapshot.params)
 
 
 @pytest.mark.unit
@@ -272,4 +271,49 @@ def test_restore_with_sgd_optimizer() -> None:
 
     # Then parameters match
     restored = parameters_to_vector(model.parameters()).detach()
-    assert T.allclose(restored, snapshot.params, atol=1e-7)
+    assert T.equal(restored, snapshot.params)
+
+
+# ---------------------------------------------------------------------------
+# Architecture mismatch validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_restore_raises_on_parameter_count_mismatch() -> None:
+    """Restoring a snapshot onto a model with different parameter count raises."""
+    # Given a snapshot from a 4->8->2 MLP
+    model_a = _make_mlp()
+    optimizer_a = T.optim.Adam(model_a.parameters())
+    snapshot = save_state(model_a, optimizer_a)
+
+    # When restoring onto a model with different architecture
+    T.manual_seed(42)
+    model_b = nn.Sequential(nn.Linear(4, 16), nn.ReLU(), nn.Linear(16, 2))
+    optimizer_b = T.optim.Adam(model_b.parameters())
+
+    # Then a ValueError is raised
+    with pytest.raises(ValueError, match="parameters"):
+        restore_state(model_b, optimizer_b, snapshot)
+
+
+@pytest.mark.unit
+def test_restore_raises_on_buffer_mismatch() -> None:
+    """Restoring a snapshot onto a model with different buffers raises."""
+    # Given two models with the same parameter count but different buffers
+    T.manual_seed(42)
+    model_with_bn = nn.Sequential(nn.Linear(4, 8), nn.BatchNorm1d(8))
+    optimizer_bn = T.optim.Adam(model_with_bn.parameters())
+    snapshot = save_state(model_with_bn, optimizer_bn)
+
+    # When restoring onto a model with same params but a missing buffer
+    T.manual_seed(42)
+    model_different = nn.Sequential(nn.Linear(4, 8), nn.BatchNorm1d(8))
+    # Manually remove a buffer to create a mismatch
+    del model_different[1].running_mean  # type: ignore[union-attr]
+
+    optimizer_diff = T.optim.Adam(model_different.parameters())
+
+    # Then a ValueError is raised mentioning the buffer mismatch
+    with pytest.raises(ValueError, match="[Bb]uffer"):
+        restore_state(model_different, optimizer_diff, snapshot)
