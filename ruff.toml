@@ -16,3 +16,6 @@ select = ["B", "E", "F", "I", "UP"]
 
 [lint.isort]
 lines-after-imports = 2
+
+[lint.pydocstyle]
+convention = "google"

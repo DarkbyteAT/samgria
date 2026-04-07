@@ -72,15 +72,11 @@ def mutation_optimizer(
     internal optimizer state that persists across inner steps but should
     not leak between tasks.
 
-    Parameters
-    ----------
-    factory
-        A callable that receives an iterable of parameters and returns
-        an ``optim.Optimizer``.  Called lazily on the first step.
+    Args:
+        factory: A callable that receives an iterable of parameters and returns
+            an ``optim.Optimizer``.  Called lazily on the first step.
 
-    Example
-    -------
-    ::
+    Example::
 
         adapt(..., inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)))
     """
@@ -151,35 +147,24 @@ class MetaOptimizer(Protocol):
     ) -> AdaptedState:
         """Run k inner optimisation steps on support data.
 
-        Parameters
-        ----------
-        model
-            The model to adapt.  Its state is saved before adaptation and
-            restored before returning — the caller's state is unchanged.
-        optimizer
-            The outer-loop optimizer.  Its state is saved and restored
-            alongside the model to maintain full isolation.
-        loss_fn
-            Callable that takes ``*support`` and returns a scalar loss.
-        support
-            Tuple of tensors (e.g. ``(x, y)``) passed to ``loss_fn``.
-        inner_steps
-            Number of inner optimisation steps to run.
-        grad_transforms
-            Optional sequence of ``GradientTransform`` instances applied
-            after ``loss.backward()`` but before each inner step.
-        inner_step_fn
-            Optional step function: ``(params, grads) -> new_params``.
-            Defaults to ``sgd(inner_lr)``.  Use ``mutation_optimizer()``
-            to wrap standard PyTorch optimizers.
-        inner_reg_fn
-            Optional regularisation callback.  At each inner step,
-            ``inner_reg_fn(current_params, base_params)`` is added to
-            the task loss.
+        Args:
+            model: The model to adapt.  Its state is saved before adaptation and
+                restored before returning — the caller's state is unchanged.
+            optimizer: The outer-loop optimizer.  Its state is saved and restored
+                alongside the model to maintain full isolation.
+            loss_fn: Callable that takes ``*support`` and returns a scalar loss.
+            support: Tuple of tensors (e.g. ``(x, y)``) passed to ``loss_fn``.
+            inner_steps: Number of inner optimisation steps to run.
+            grad_transforms: Optional sequence of ``GradientTransform`` instances applied
+                after ``loss.backward()`` but before each inner step.
+            inner_step_fn: Optional step function: ``(params, grads) -> new_params``.
+                Defaults to ``sgd(inner_lr)``.  Use ``mutation_optimizer()``
+                to wrap standard PyTorch optimizers.
+            inner_reg_fn: Optional regularisation callback.  At each inner step,
+                ``inner_reg_fn(current_params, base_params)`` is added to
+                the task loss.
 
-        Returns
-        -------
-        AdaptedState
+        Returns:
             Contains a detached ``ParameterSnapshot`` and optionally
             graph-connected parameters for second-order methods.
         """
@@ -195,19 +180,13 @@ class MetaOptimizer(Protocol):
     ) -> None:
         """Compute and apply the outer-loop update.
 
-        Parameters
-        ----------
-        model
-            The model to update in-place.
-        optimizer
-            The outer-loop optimizer used to apply the update.
-        base_snapshot
-            Snapshot of the pre-adaptation outer-loop state.
-        adapted
-            One ``AdaptedState`` per task, produced by ``adapt()``.
-        query_losses
-            Scalar losses evaluated on query sets at the adapted points.
-            Required for gradient-based meta-optimizers (MAML, FOMAML);
-            ignored by Reptile which uses parameter interpolation.
+        Args:
+            model: The model to update in-place.
+            optimizer: The outer-loop optimizer used to apply the update.
+            base_snapshot: Snapshot of the pre-adaptation outer-loop state.
+            adapted: One ``AdaptedState`` per task, produced by ``adapt()``.
+            query_losses: Scalar losses evaluated on query sets at the adapted points.
+                Required for gradient-based meta-optimizers (MAML, FOMAML);
+                ignored by Reptile which uses parameter interpolation.
         """
         ...

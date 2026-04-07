@@ -41,20 +41,16 @@ def functional_forward(
     dispatched via ``functional_call(model, params, (x,))`` instead of
     using the module's stored parameters.
 
-    Parameters
-    ----------
-    model
-        The module whose forward to redirect.
-    params
-        Named parameter tensors to use for the forward pass.  These
-        may be graph-connected (e.g. from a differentiable inner loop)
-        or detached.
+    Args:
+        model: The module whose forward to redirect.
+        params: Named parameter tensors to use for the forward pass.  These
+            may be graph-connected (e.g. from a differentiable inner loop)
+            or detached.
 
-    Notes
-    -----
-    The patched forward un-patches itself before calling ``functional_call``
-    to prevent infinite recursion — ``functional_call`` internally calls
-    ``module(...)`` which would otherwise re-enter the patch.
+    Note:
+        The patched forward un-patches itself before calling ``functional_call``
+        to prevent infinite recursion — ``functional_call`` internally calls
+        ``module(...)`` which would otherwise re-enter the patch.
     """
     original_forward = model.forward
 

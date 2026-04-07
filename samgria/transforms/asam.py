@@ -27,10 +27,8 @@ class ASAM:
     by ``rho``.  This makes the perturbation adaptive to parameter scale:
     larger parameters receive proportionally larger perturbations.
 
-    Parameters
-    ----------
-    `rho`
-        Perturbation radius.
+    Args:
+        rho: Perturbation radius.
     """
 
     def __init__(self, rho: float = 1e-2) -> None:

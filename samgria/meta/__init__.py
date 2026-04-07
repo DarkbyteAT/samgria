@@ -1,7 +1,7 @@
 """Meta-learning optimizers — MAML, FOMAML, and Reptile.
 
 Formalisms
-----------
+++++++++++
 
 A standard learning problem optimises parameters theta over a single
 dataset D and loss surface L:
@@ -37,7 +37,7 @@ Algorithm variants differ in how the outer gradient is computed:
              theta <- theta + beta * g
 
 Math-to-code mapping
---------------------
+++++++++++++++++++++
 
     Math                    Code
     ----                    ----
@@ -52,7 +52,7 @@ Math-to-code mapping
     Outer update            ms.step() / context manager __exit__
 
 Extension points
-----------------
+++++++++++++++++
 
 - Per-task ``weight`` scales the query loss contribution.
 - Per-task ``inner_steps`` and ``grad_transforms`` override defaults.
@@ -63,7 +63,7 @@ Extension points
 - ``query_loss_fn`` callback for custom query loss computation.
 
 Usage
------
++++++
 
 One outer meta-learning step::
 

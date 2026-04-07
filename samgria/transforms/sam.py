@@ -25,11 +25,9 @@ __all__ = ["SAM"]
 class SAM:
     """Sharpness-Aware Minimisation.
 
-    Parameters
-    ----------
-    `rho`
-        Perturbation radius.  Controls how far parameters are moved in the
-        gradient direction before recomputing the loss.
+    Args:
+        rho: Perturbation radius.  Controls how far parameters are moved in the
+            gradient direction before recomputing the loss.
     """
 
     def __init__(self, rho: float = 1e-2) -> None:
