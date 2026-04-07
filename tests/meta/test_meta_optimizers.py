@@ -123,8 +123,8 @@ def test_adapt_returns_adapted_state() -> None:
 
 
 @pytest.mark.unit
-def test_fomaml_adapted_state_has_no_live_params() -> None:
-    """FOMAML's AdaptedState has live_params=None (first-order, no graph)."""
+def test_fomaml_adapted_state_has_live_params() -> None:
+    """FOMAML's AdaptedState has live_params for functional query evaluation."""
     # Given a model with FOMAML
     model = _make_mlp()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
@@ -134,8 +134,9 @@ def test_fomaml_adapted_state_has_no_live_params() -> None:
     x, y = _sinusoid_task(amplitude=1.0, phase=0.0)
     result = fomaml.adapt(model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3)
 
-    # Then live_params is None
-    assert result.live_params is None
+    # Then live_params is populated
+    assert result.live_params is not None
+    assert isinstance(result.live_params, dict)
 
 
 @pytest.mark.unit
@@ -637,23 +638,25 @@ def test_query_forward_with_live_params_uses_functional_call() -> None:
 
 
 @pytest.mark.unit
-def test_query_forward_without_live_params_uses_model_directly() -> None:
-    """query_forward falls back to model() when live_params is None."""
-    # Given a FOMAML adapted state (no live_params)
+def test_query_forward_with_fomaml_uses_adapted_params() -> None:
+    """query_forward routes through adapted params for FOMAML too."""
+    # Given a FOMAML adapted state (live_params populated but detached)
     model = _make_mlp()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    fomaml = FOMAML(inner_lr=0.01)
-    x, y = _sinusoid_task(amplitude=1.0, phase=0.0)
-    result = fomaml.adapt(model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3)
+    fomaml = FOMAML(inner_lr=0.1)
+    x, y = _sinusoid_task(amplitude=3.0, phase=1.0)
+    result = fomaml.adapt(model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=10)
 
-    # When query_forward is called (model still at outer params)
-    x_q = T.randn(5, 1)
+    # When query_forward is called
+    x_q = T.linspace(-5.0, 5.0, 20).unsqueeze(1)
     pred = query_forward(model, result, x_q)
 
-    # Then the output matches a direct model call
+    # Then the output differs from the outer model (adapted params used)
     with T.no_grad():
-        direct_pred = model(x_q)
-    assert T.equal(pred.detach(), direct_pred)
+        outer_pred = model(x_q)
+    assert not T.allclose(pred.detach(), outer_pred, atol=1e-4), (
+        "query_forward produced same output as outer model — adapted params not used"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -816,3 +819,76 @@ def test_multi_task_meta_step_produces_parameter_update() -> None:
 
     # Then parameters changed (outer update was applied)
     assert not T.equal(params_before_step, params_after_step)
+
+
+# ---------------------------------------------------------------------------
+# BatchNorm compatibility
+# ---------------------------------------------------------------------------
+
+
+def _make_bn_mlp() -> nn.Sequential:
+    """MLP with BatchNorm — exercises buffer handling in meta-learning."""
+    T.manual_seed(42)
+    return nn.Sequential(nn.Linear(1, 8), nn.BatchNorm1d(8), nn.ReLU(), nn.Linear(8, 1))
+
+
+@pytest.mark.unit
+def test_fomaml_works_with_batchnorm() -> None:
+    """FOMAML adapts a BatchNorm model and captures buffers in the snapshot."""
+    # Given a model with BatchNorm
+    model = _make_bn_mlp()
+    model.train()
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    fomaml = FOMAML(inner_lr=0.01)
+    x, y = _sinusoid_task(amplitude=2.0, phase=1.0, n_samples=16)
+
+    # When adapt() runs
+    result = fomaml.adapt(model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3)
+
+    # Then the snapshot contains BatchNorm buffers
+    assert result.snapshot.buffers
+    assert "1.running_mean" in result.snapshot.buffers
+
+
+@pytest.mark.unit
+def test_maml_works_with_batchnorm() -> None:
+    """MAML adapts a BatchNorm model without corrupting the autograd graph."""
+    # Given a model with BatchNorm
+    model = _make_bn_mlp()
+    model.train()
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    maml = MAML(inner_lr=0.01)
+    x, y = _sinusoid_task(amplitude=2.0, phase=1.0, n_samples=16)
+
+    # When adapt() runs
+    result = maml.adapt(model, optimizer, _mse_loss_fn(model), (x, y), inner_steps=3)
+
+    # Then live_params are present and buffers are captured
+    assert result.live_params is not None
+    assert result.snapshot.buffers
+    # And the model is back in train mode after adapt
+    assert model.training
+
+
+@pytest.mark.unit
+def test_batchnorm_meta_step_via_context_manager() -> None:
+    """Full outer step with BatchNorm model works through MetaStep."""
+    # Given a model with BatchNorm
+    from samgria.meta.step import meta_step as ms_ctx
+
+    model = _make_bn_mlp()
+    model.train()
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    fomaml = FOMAML(inner_lr=0.01)
+    params_before = parameters_to_vector(model.parameters()).detach().clone()
+
+    x_s, y_s = _sinusoid_task(amplitude=2.0, phase=1.0, n_samples=16)
+    x_q, y_q = _sinusoid_task(amplitude=2.0, phase=1.0, n_samples=8)
+
+    # When a full outer step runs
+    with ms_ctx(fomaml, model, optimizer, loss_fn=_mse_loss_fn(model), inner_steps=3) as ms:
+        ms.task(support=(x_s, y_s), query=(x_q, y_q))
+
+    # Then parameters changed
+    params_after = parameters_to_vector(model.parameters()).detach()
+    assert not T.equal(params_before, params_after)

@@ -56,9 +56,38 @@ Extension points
 
 - Per-task ``weight`` scales the query loss contribution.
 - Per-task ``inner_steps`` and ``grad_transforms`` override defaults.
+- ``inner_step_fn`` plugs in differentiable optimizers (see ``sgd()``,
+  ``mutation_optimizer()``).
 - ``inner_reg_fn`` adds regularisation to the inner loss (e.g. L2
   toward theta, KL divergence, elastic weight consolidation).
 - ``query_loss_fn`` callback for custom query loss computation.
+
+Usage
+-----
+
+One outer meta-learning step::
+
+    with meta_step(fomaml, model, opt, loss_fn=loss_fn, inner_steps=5) as ms:
+        for support, query in tasks:
+            ms.task(support=support, query=query)
+
+Swap ``FOMAML`` for ``MAML`` or ``Reptile`` — consumer code is identical.
+
+When you need conditional logic, per-task variation, or decoupled
+construction, use the ``MetaStep`` builder directly::
+
+    ms = MetaStep(fomaml, model, opt, loss_fn=loss_fn, inner_steps=5)
+    ms.task(support=task_a, query=query_a)
+    if include_hard_task:
+        ms.task(support=task_b, query=query_b, inner_steps=20)
+    ms.step()
+
+The context manager is sugar over the builder — it calls ``MetaStep()``
+on enter and ``.step()`` on exit.  Same object, same capabilities.
+
+For full control over the adaptation and query evaluation cycle (e.g.
+meta-RL where query data comes from environment rollouts), use the
+low-level ``adapt()`` and ``meta_step()`` primitives directly.
 """
 
 from samgria.meta.maml import FOMAML as FOMAML

@@ -42,6 +42,7 @@ __all__ = ["FOMAML", "MAML", "functional_adapt"]
 
 def _build_snapshot(
     params: dict[str, T.Tensor],
+    buffers: dict[str, T.Tensor],
     optimizer: optim.Optimizer,
 ) -> ParameterSnapshot:
     """Build a ParameterSnapshot from a functional params dict.
@@ -57,7 +58,7 @@ def _build_snapshot(
         params=flat,
         numel=flat.numel(),
         optim_state=copy.deepcopy(optimizer.state_dict()),
-        buffers={},
+        buffers={k: v.detach().clone() for k, v in buffers.items()},
     )
 
 
@@ -83,6 +84,13 @@ def functional_adapt(
     step_fn = inner_step_fn or sgd(inner_lr)
 
     params: dict[str, T.Tensor] = {k: v.clone().requires_grad_(True) for k, v in model.named_parameters()}
+
+    # Disable BatchNorm running stats updates during the functional inner
+    # loop — in-place updates to running_mean/running_var corrupt the
+    # autograd graph when create_graph=True.  Training mode is restored
+    # before returning.
+    was_training = model.training
+    model.train(False)
 
     for _ in range(inner_steps):
         with functional_forward(model, params):
@@ -127,12 +135,17 @@ def functional_adapt(
         # Ensure params require grad for the next iteration's autograd.grad
         params = {k: v if v.requires_grad else v.requires_grad_(True) for k, v in params.items()}
 
-    snapshot = _build_snapshot(params, optimizer)
+    model.train(was_training)
+
+    buffers = {name: buf.detach().clone() for name, buf in model.named_buffers()}
+    snapshot = _build_snapshot(params, buffers, optimizer)
     restore_state(model, optimizer, outer_snapshot)
-    return AdaptedState(
-        snapshot=snapshot,
-        live_params=params if create_graph else None,
-    )
+
+    # Merge buffers into live_params so functional_forward passes them
+    # to functional_call — this overrides the model's stored buffers,
+    # preventing in-place restore_state from corrupting the query graph.
+    live = {**params, **buffers}
+    return AdaptedState(snapshot=snapshot, live_params=live)
 
 
 def _gradient_meta_step(

@@ -1,6 +1,6 @@
 # samgria
 
-Composable gradient transforms for PyTorch -- SAM, ASAM, LAMP, and beyond.
+Composable gradient transforms and meta-learning for PyTorch.
 
 ## Overview
 
@@ -151,6 +151,30 @@ for epoch in range(100):
 ```
 
 SAM rewrites the gradients before descent; LAMPRollback perturbs and averages the parameters after descent. Each transform is self-contained and unaware of the others.
+
+## Meta-Learning
+
+samgria includes MAML, FOMAML, and Reptile meta-learning algorithms with a composable API that mirrors the mathematics.
+
+```python
+from samgria import FOMAML, meta_step
+
+fomaml = FOMAML(inner_lr=0.01)
+
+with meta_step(fomaml, model, optimizer, loss_fn=loss_fn, inner_steps=5) as ms:
+    for support, query in tasks:
+        ms.task(support=support, query=query)
+```
+
+| Algorithm | Method | Key Idea |
+|-----------|--------|----------|
+| `MAML` | Second-order | Full backprop through inner steps via `torch.func.functional_call` |
+| `FOMAML` | First-order | Drops second-order terms for efficiency; comparable results, much cheaper |
+| `Reptile` | Parameter interpolation | No query set needed; outer update moves toward mean of adapted params |
+
+Features: per-task weighting, inner-loop regularisation, configurable inner optimizers via `InnerStepFn`, SAM composition inside the inner loop, and a `MetaStep` builder for power users.
+
+See [docs/meta-learning.md](docs/meta-learning.md) for the full guide with examples and mathematical formalism.
 
 ## Writing a Custom Transform
 

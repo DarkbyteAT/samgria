@@ -160,15 +160,13 @@ class MetaStep:
         if query is not None:
             if query_loss_fn is not None:
                 q_loss = query_loss_fn(self._model, result)
-            elif result.live_params is not None:
-                # MAML: route through functional_call for second-order grads
+            else:
+                # Route through functional_call with adapted params —
+                # avoids in-place restore_state which corrupts BatchNorm
+                # buffer version counters.
+                assert result.live_params is not None
                 with functional_forward(self._model, result.live_params):
                     q_loss = task_loss_fn(*query)
-            else:
-                # FOMAML: restore adapted state, evaluate, restore base
-                restore_state(self._model, self._optimizer, result.snapshot)
-                q_loss = task_loss_fn(*query)
-                restore_state(self._model, self._optimizer, self._base_snapshot)
 
             self._query_losses.append(weight * q_loss)
             self._has_query_losses = True
