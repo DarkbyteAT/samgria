@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import pytest
 import torch as T
 import torch.nn as nn
 from torch.nn.utils import parameters_to_vector
 
-import pytest
-
-from samgria import ASAM, GradientTransform, LAMPRollback, SAM
+from samgria import ASAM, SAM, GradientTransform, LAMPRollback
 
 
 # ---------------------------------------------------------------------------

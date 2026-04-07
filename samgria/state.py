@@ -37,16 +37,23 @@ Design decisions:
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch as T
 import torch.nn as nn
 import torch.optim as optim
+from torch.func import functional_call
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 
-__all__ = ["ParameterSnapshot", "restore_state", "save_state"]
+__all__ = [
+    "AdaptedState",
+    "ParameterSnapshot",
+    "query_forward",
+    "restore_state",
+    "save_state",
+]
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,58 @@ class ParameterSnapshot:
     buffers: dict[str, T.Tensor]
 
 
+@dataclass(frozen=True)
+class AdaptedState:
+    """State produced by inner-loop adaptation.
+
+    Composes a detached ``ParameterSnapshot`` (for state management,
+    restore, and Reptile-style interpolation) with an optional dict of
+    graph-connected parameter tensors (for MAML's second-order outer
+    update via ``functional_call``).
+
+    Attributes
+    ----------
+    snapshot
+        Immutable, detached checkpoint of the adapted model state.
+    live_params
+        Named parameter tensors that retain the computation graph
+        through the inner-loop steps.  Present for second-order methods
+        (MAML); ``None`` for first-order methods (FOMAML, Reptile).
+    """
+
+    snapshot: ParameterSnapshot
+    live_params: dict[str, T.Tensor] | None = field(default=None)
+
+
+def query_forward(
+    model: nn.Module,
+    adapted: AdaptedState,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run a forward pass through adapted parameters.
+
+    When ``adapted.live_params`` is populated (MAML), the forward pass
+    is routed through ``torch.func.functional_call`` so the computation
+    graph flows back through the inner-loop steps.  Otherwise falls back
+    to a plain ``model()`` call using the model's **currently loaded**
+    parameters — the caller must ensure these are the adapted params
+    (e.g. via ``restore_state``) before calling this function.
+
+    Parameters
+    ----------
+    model
+        The model whose forward method to call.
+    adapted
+        The adapted state from ``MetaOptimizer.adapt()``.
+    *args, **kwargs
+        Forwarded to the model's forward method.
+    """
+    if adapted.live_params is not None:
+        return functional_call(model, adapted.live_params, args, kwargs)
+    return model(*args, **kwargs)
+
+
 def save_state(model: nn.Module, optimizer: optim.Optimizer) -> ParameterSnapshot:
     """Capture a complete, immutable snapshot of model and optimizer state.
 
@@ -92,10 +151,7 @@ def save_state(model: nn.Module, optimizer: optim.Optimizer) -> ParameterSnapsho
     """
     params = parameters_to_vector(model.parameters()).detach().clone()
     optim_state = copy.deepcopy(optimizer.state_dict())
-    buffers = {
-        name: buf.detach().clone()
-        for name, buf in model.named_buffers()
-    }
+    buffers = {name: buf.detach().clone() for name, buf in model.named_buffers()}
     return ParameterSnapshot(
         params=params,
         numel=params.numel(),
@@ -153,9 +209,7 @@ def restore_state(
             parts.append(f"snapshot has buffers not in model: {missing}")
         if extra:
             parts.append(f"model has buffers not in snapshot: {extra}")
-        raise ValueError(
-            f"Buffer mismatch between model and snapshot. {'; '.join(parts)}"
-        )
+        raise ValueError(f"Buffer mismatch between model and snapshot. {'; '.join(parts)}")
 
     # Restore parameters and clear stale gradients.  Without this,
     # gradients from a previous inner loop could leak into the next

@@ -152,9 +152,7 @@ def test_round_trip_preserves_optimizer_state() -> None:
             saved_val = saved_optim["state"][key][buf_name]
             current_val = current_optim["state"][key][buf_name]
             if isinstance(saved_val, T.Tensor):
-                assert T.equal(saved_val, current_val), (
-                    f"Optimizer state mismatch: param {key}, buffer {buf_name}"
-                )
+                assert T.equal(saved_val, current_val), f"Optimizer state mismatch: param {key}, buffer {buf_name}"
             else:
                 assert saved_val == current_val
 
@@ -431,9 +429,7 @@ def test_maml_inner_loop_pattern() -> None:
         restore_state(model, optimizer, outer_snapshot)
 
         # Verify we're starting from the outer state
-        assert T.equal(
-            parameters_to_vector(model.parameters()).detach(), outer_params
-        )
+        assert T.equal(parameters_to_vector(model.parameters()).detach(), outer_params)
         # Verify gradients are clean
         assert all(p.grad is None for p in model.parameters())
 
@@ -442,9 +438,7 @@ def test_maml_inner_loop_pattern() -> None:
         for _ in range(5):
             _train_step(model, optimizer)
 
-        adapted_params.append(
-            parameters_to_vector(model.parameters()).detach().clone()
-        )
+        adapted_params.append(parameters_to_vector(model.parameters()).detach().clone())
 
     # Then each task's adapted params differ from the outer state
     for i, ap in enumerate(adapted_params):
@@ -533,9 +527,7 @@ def test_reptile_outer_update_pattern() -> None:
         for _ in range(5):
             _train_step(model, optimizer)
 
-        adapted_params.append(
-            parameters_to_vector(model.parameters()).detach().clone()
-        )
+        adapted_params.append(parameters_to_vector(model.parameters()).detach().clone())
 
     # Then we can compute the Reptile outer update via interpolation
     mean_diff = T.stack([ap - outer_params for ap in adapted_params]).mean(dim=0)
