@@ -18,7 +18,7 @@ source scripts/enable-venv.sh
 Google-style docstrings with LaTeX math support:
 
 ```python
-"""Compute the SAM perturbation $\epsilon^* \approx \rho \nabla L / \|\nabla L\|$.
+r"""Compute the SAM perturbation $\epsilon^* \approx \rho \nabla L / \|\nabla L\|$.
 
 Args:
     rho: Perturbation radius $\rho$.
@@ -29,7 +29,7 @@ Returns:
 """
 ```
 
-Use `$...$` for inline math and `$$...$$` for display math in docstrings.
+Use `$...$` for inline math and `$$...$$` for display math in docstrings. Prefix docstrings containing LaTeX backslash sequences with `r"""..."""` to avoid `SyntaxWarning: invalid escape sequence` on Python 3.12+.
 
 ## Quality Gates
 
