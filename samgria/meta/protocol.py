@@ -76,9 +76,10 @@ def mutation_optimizer(
         factory: A callable that receives an iterable of parameters and returns
             an ``optim.Optimizer``.  Called lazily on the first step.
 
-    Example::
-
+    Example:
+        ```python
         adapt(..., inner_step_fn=mutation_optimizer(lambda p: optim.Adam(p, lr=0.01)))
+        ```
     """
     opt_holder: list[optim.Optimizer] = []
     param_holder: list[dict[str, nn.Parameter]] = []

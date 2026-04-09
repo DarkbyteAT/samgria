@@ -14,10 +14,12 @@ def get_grad(params: Iterable[nn.Parameter]) -> T.Tensor:
 
     Returns:
         A flattened vector of the gradients of each parameter.
+
+    Raises:
+        AttributeError: If any parameter has ``grad=None``. Callers must ensure
+            ``.backward()`` has been called and only pass parameters that
+            require gradients (frozen parameters have ``grad=None``).
     """
-    # p.grad is Optional[Tensor] — None for frozen parameters.
-    # Callers must ensure .backward() has been called and only
-    # pass parameters that require gradients.
     return T.cat([p.grad.view(-1) for p in params])  # pyright: ignore[reportOptionalMemberAccess]
 
 

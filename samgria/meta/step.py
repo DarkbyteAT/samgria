@@ -109,7 +109,9 @@ class MetaStep:
             weight: Scaling factor for this task's query loss contribution.
 
         Returns:
-            The adapted state for this task (informational).
+            The adapted state for this task. Returned for inspection only —
+            ``MetaStep`` already tracks it internally, so callers need not
+            retain it.
         """
         # Resolve per-task overrides
         task_loss_fn = loss_fn or self._default_loss_fn
@@ -186,11 +188,12 @@ def meta_step(
     Saves model/optimizer state on enter, applies the outer update on
     exit.  All keyword arguments are forwarded to ``MetaStep``.
 
-    Usage::
-
+    Example:
+        ```python
         with meta_step(fomaml, model, optimizer, loss_fn=loss_fn, inner_steps=5) as ms:
             for support, query in tasks:
                 ms.task(support=support, query=query)
+        ```
     """
     ms = MetaStep(meta_optimizer, model, optimizer, **kwargs)
     yield ms

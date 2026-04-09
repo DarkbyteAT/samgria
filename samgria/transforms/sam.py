@@ -23,11 +23,16 @@ __all__ = ["SAM"]
 
 
 class SAM:
-    """Sharpness-Aware Minimisation.
+    r"""Sharpness-Aware Minimisation.
+
+    The perturbation is $\epsilon^* \approx \rho \cdot \nabla L / \|\nabla L\|$:
+    parameters are moved along the normalised gradient by a radius $\rho$, then
+    the loss is recomputed at the perturbed point to capture the worst-case
+    gradient in a neighbourhood of the current parameters.
 
     Args:
-        rho: Perturbation radius.  Controls how far parameters are moved in the
-            gradient direction before recomputing the loss.
+        rho: Perturbation radius $\rho$.  Controls how far parameters are moved
+            in the gradient direction before recomputing the loss.
     """
 
     def __init__(self, rho: float = 1e-2) -> None:

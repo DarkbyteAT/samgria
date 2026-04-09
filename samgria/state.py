@@ -113,7 +113,11 @@ def query_forward(
     Args:
         model: The model whose forward method to call.
         adapted: The adapted state from ``MetaOptimizer.adapt()``.
-        *args, **kwargs: Forwarded to the model's forward method.
+        *args: Positional arguments forwarded to the model's forward method.
+        **kwargs: Keyword arguments forwarded to the model's forward method.
+
+    Returns:
+        The model's forward output, computed at the adapted parameters.
     """
     if adapted.live_params is not None:
         return functional_call(model, adapted.live_params, args, kwargs)

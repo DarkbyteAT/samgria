@@ -21,14 +21,14 @@ __all__ = ["ASAM"]
 
 
 class ASAM:
-    """Adaptive Sharpness-Aware Minimisation.
+    r"""Adaptive Sharpness-Aware Minimisation.
 
-    The perturbation direction is ``|theta|^2 * grad``, normalised and scaled
-    by ``rho``.  This makes the perturbation adaptive to parameter scale:
+    The perturbation direction is $|\theta|^2 \odot \nabla L$, normalised and
+    scaled by $\rho$.  This makes the perturbation adaptive to parameter scale:
     larger parameters receive proportionally larger perturbations.
 
     Args:
-        rho: Perturbation radius.
+        rho: Perturbation radius $\rho$.
     """
 
     def __init__(self, rho: float = 1e-2) -> None:
@@ -65,4 +65,4 @@ class ASAM:
         set_grad(new_grad, model.parameters())
 
     def post_step(self, model: nn.Module) -> None:
-        """No-op -- ASAM does not modify parameters after descent."""
+        """No-op — ASAM does not modify parameters after descent."""
