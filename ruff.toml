@@ -12,7 +12,7 @@ exclude = [
     "dist",
     "venv",
 ]
-select = ["B", "E", "F", "I", "UP"]
+select = ["B", "D", "E", "F", "I", "UP"]
 
 [lint.isort]
 lines-after-imports = 2

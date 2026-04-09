@@ -32,6 +32,7 @@ class ASAM:
     """
 
     def __init__(self, rho: float = 1e-2) -> None:
+        """Initialize ASAM with the given perturbation radius."""
         self.rho = rho
 
     def apply(

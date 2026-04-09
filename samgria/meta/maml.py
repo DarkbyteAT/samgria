@@ -176,6 +176,7 @@ class MAML:
     create_graph: bool = True
 
     def __init__(self, inner_lr: float) -> None:
+        """Initialize MAML with the given inner learning rate."""
         self.inner_lr = inner_lr
 
     def adapt(
@@ -226,6 +227,7 @@ class FOMAML:
     create_graph: bool = False
 
     def __init__(self, inner_lr: float) -> None:
+        """Initialize FOMAML with the given inner learning rate."""
         self.inner_lr = inner_lr
 
     def adapt(

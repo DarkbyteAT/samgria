@@ -36,6 +36,7 @@ class SAM:
     """
 
     def __init__(self, rho: float = 1e-2) -> None:
+        """Initialize SAM with the given perturbation radius."""
         self.rho = rho
 
     def apply(

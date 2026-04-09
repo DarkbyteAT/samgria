@@ -52,6 +52,7 @@ class Reptile:
     create_graph: bool = False
 
     def __init__(self, inner_lr: float, meta_lr: float) -> None:
+        """Initialize Reptile with the given inner and meta learning rates."""
         self.inner_lr = inner_lr
         self.meta_lr = meta_lr
 

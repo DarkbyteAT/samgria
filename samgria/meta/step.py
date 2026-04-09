@@ -67,6 +67,7 @@ class MetaStep:
         inner_step_fn: InnerStepFn | None = None,
         inner_reg_fn: InnerRegFn | None = None,
     ) -> None:
+        """Initialize the meta-step context with the given meta-optimizer and model."""
         self._meta_opt = meta_optimizer
         self._model = model
         self._optimizer = optimizer

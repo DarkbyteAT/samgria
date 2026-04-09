@@ -32,6 +32,7 @@ class LAMPRollback:
     """
 
     def __init__(self, eps: float = 5e-3, rollback_len: int = 10) -> None:
+        """Initialize LAMPRollback with the given noise scale and rollback length."""
         self.eps = eps
         self.rollback_len = rollback_len
         # Lazily initialised on first post_step() call — needs parameter vector size
