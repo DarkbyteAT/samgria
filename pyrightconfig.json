@@ -1,6 +1,6 @@
 {
-    "include": ["PACKAGE_NAME"],
-    "exclude": ["tests"],
+    "include": ["samgria"],
+    "exclude": ["tests", "spikes"],
     "pythonVersion": "3.11",
     "typeCheckingMode": "strict",
     "reportMissingImports": false
