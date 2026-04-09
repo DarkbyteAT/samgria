@@ -1,0 +1,16 @@
+[project]
+name = "samgria-spike-jax-second-order"
+version = "0.0.0"
+description = "Pre-flight spike for samgria-JAX port: verify second-order correctness of optax.contrib.sam under nested jax.grad"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jax>=0.4.30",
+    "jaxlib>=0.4.30",
+    "optax>=0.2.5",
+    "equinox>=0.11",
+    "numpy>=1.26",
+]
+
+[tool.uv]
+package = false

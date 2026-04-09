@@ -26,3 +26,6 @@ convention = "google"
 "tests/**" = ["D"]
 # Example scripts are demonstrations, not library code — D rules add noise.
 "examples/**" = ["D"]
+# Spikes are pre-flight exploration scripts. The README.md alongside each
+# spike carries the narrative; inline docstrings add noise without value.
+"spikes/**" = ["D"]
