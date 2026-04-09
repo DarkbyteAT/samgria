@@ -69,8 +69,14 @@ INNER_STEPS = 4  # Must be >= sync_period*2 for SAM to complete a full cycle
 SYNC_PERIOD = 2
 
 # Sweep configs: each (seed, sync_period, inner_steps). inner_steps chosen so
-# SAM completes at least 2 full sync cycles, which exercises both the
-# "cache snapshot" and "sync and reset" code paths in transparent mode.
+# SAM completes at least 2 full sync cycles in the first six, plus edge
+# configs to exercise corner code paths:
+#   (seed, 1, N)         — sync_period=1 (every step is a sync step; degenerate
+#                          but hits a path where steps_since_sync never increments)
+#   (seed, 2, 5)         — inner_steps=5, sync_period=2 → ends MID-CYCLE with
+#                          state.cache != params and steps_since_sync == 0 on
+#                          the 5th update; catches bugs where the final SAMState
+#                          is not differentiated through correctly
 SWEEP = [
     (20260409, 2, 4),
     (20260409, 2, 6),
@@ -78,6 +84,8 @@ SWEEP = [
     (20260410, 2, 4),
     (20260411, 3, 9),
     (20260412, 2, 8),
+    (20260413, 1, 4),  # sync_period=1 edge case
+    (20260414, 2, 5),  # ends mid-cycle (odd inner_steps with sync_period=2)
 ]
 
 Params = dict[str, dict[str, jax.Array]]
@@ -279,6 +287,53 @@ def forward_mode_grad(adapt_fn, params: Params, tasks: Tasks) -> tuple[float, Pa
     return float(outer_flat(flat)), unravel(grad_flat)
 
 
+def finite_difference_directional(
+    adapt_fn,
+    params: Params,
+    tasks: Tasks,
+    *,
+    direction_key: jax.Array,
+    eps: float = 1e-5,
+) -> tuple[float, float]:
+    """Independent oracle: central finite-difference vs autodiff directional grad.
+
+    Returns (fd_value, ad_value) where both estimate the directional derivative
+    of outer_loss along a random unit direction v:
+
+        fd = (f(p + eps*v) - f(p - eps*v)) / (2*eps)
+        ad = <jax.grad(outer_loss)(p), v>
+
+    The reverse/forward/scan/unrolled AD encodings we compare elsewhere all
+    share the JAX autodiff substrate. If that substrate were systematically
+    biased for this computation (unlikely but not impossible), the three
+    encodings would lie together. Finite differences is algebraically
+    independent — it differentiates by *evaluating f*, not by tracing — so
+    it's the only truly independent oracle the spike can cheaply afford.
+
+    Limitations: (i) it's a *directional* derivative, not the full gradient —
+    one scalar per direction, so we only catch signal if the bias projects
+    onto the chosen direction; (ii) finite differences itself has O(eps) bias
+    plus O(1/eps) roundoff, so agreement at ~1e-6 relative is the ceiling,
+    not ~1e-15; (iii) we pick one direction per call — a seed sweep over
+    directions would give more coverage, but one direction catches any
+    sign-consistent bug.
+    """
+    flat, unravel = jax.flatten_util.ravel_pytree(params)
+    v = jax.random.normal(direction_key, flat.shape, dtype=flat.dtype)
+    v = v / jnp.linalg.norm(v)  # unit direction
+
+    outer = make_outer_loss(adapt_fn)
+
+    def outer_flat(p_flat):
+        return outer(unravel(p_flat), tasks)
+
+    fd = float((outer_flat(flat + eps * v) - outer_flat(flat - eps * v)) / (2.0 * eps))
+
+    ad_grad_flat = jax.grad(outer_flat)(flat)
+    ad = float(jnp.dot(ad_grad_flat, v))
+    return fd, ad
+
+
 # -----------------------------------------------------------------------------
 # Pairwise comparison.
 # -----------------------------------------------------------------------------
@@ -304,6 +359,13 @@ class SubSpike:
     description: str
     encodings: list[Encoding]
     pairs: list[PairDiff] = field(default_factory=list)
+    # Finite-difference oracle cross-check: directional derivatives along one
+    # random unit direction. fd_value is a central finite difference; ad_value
+    # is the reverse-mode AD projection onto the same direction. Target
+    # agreement is O(eps^2 + roundoff/eps) ≈ 1e-6 with eps=1e-5 in float64.
+    fd_value: float = float("nan")
+    ad_value: float = float("nan")
+    fd_ad_rel_diff: float = float("nan")
 
 
 def _grad_norm(grads: Params) -> float:
@@ -322,7 +384,15 @@ def _contains_nan(grads: Params) -> bool:
     return any(bool(jnp.any(jnp.isnan(x))) for x in jax.tree.leaves(grads))
 
 
-def build_subspike(name: str, description: str, adapt_unrolled, adapt_scan) -> SubSpike:
+def build_subspike(
+    name: str,
+    description: str,
+    adapt_unrolled,
+    adapt_scan,
+    *,
+    fd_direction_key: jax.Array,
+    fd_eps: float = 1e-5,
+) -> SubSpike:
     loss_ru, g_ru = reverse_mode_grad(adapt_unrolled, PARAMS, TASKS)
     loss_rs, g_rs = reverse_mode_grad(adapt_scan, PARAMS, TASKS)
     loss_fu, g_fu = forward_mode_grad(adapt_unrolled, PARAMS, TASKS)
@@ -343,7 +413,27 @@ def build_subspike(name: str, description: str, adapt_unrolled, adapt_scan) -> S
                 denom = max(a.grad_norm, b.grad_norm) + 1e-30
                 rel = diff / denom
             pairs.append(PairDiff(a=a.name, b=b.name, max_abs_diff=diff, rel_diff=rel))
-    return SubSpike(name=name, description=description, encodings=encs, pairs=pairs)
+
+    # Independent oracle: finite differences vs reverse-mode directional grad.
+    fd_value, ad_value = finite_difference_directional(
+        adapt_unrolled,
+        PARAMS,
+        TASKS,
+        direction_key=fd_direction_key,
+        eps=fd_eps,
+    )
+    denom = max(abs(fd_value), abs(ad_value), 1e-30)
+    fd_ad_rel_diff = abs(fd_value - ad_value) / denom
+
+    return SubSpike(
+        name=name,
+        description=description,
+        encodings=encs,
+        pairs=pairs,
+        fd_value=fd_value,
+        ad_value=ad_value,
+        fd_ad_rel_diff=fd_ad_rel_diff,
+    )
 
 
 def print_subspike(s: SubSpike) -> None:
@@ -362,6 +452,8 @@ def print_subspike(s: SubSpike) -> None:
             print(f"{label:32s}  {'nan':>13s}  {'nan':>12s}")
         else:
             print(f"{label:32s}  {p.max_abs_diff:13.6e}  {p.rel_diff:12.3e}")
+    # Independent oracle row.
+    print(f"{'FD oracle':32s}  fd={s.fd_value:.6e}  ad={s.ad_value:.6e}  rel={s.fd_ad_rel_diff:.3e}")
 
 
 # -----------------------------------------------------------------------------
@@ -409,20 +501,26 @@ def print_subspike(s: SubSpike) -> None:
 # Suggested constants:
 REL_STRICT = 1e-10
 REL_LOOSE = 1e-4
+# FD oracle: O(eps^2) bias + O(roundoff/eps) noise → ~1e-6 to 1e-5 at eps=1e-5
+# on well-conditioned problems. Loose tolerance catches order-of-magnitude bugs
+# without tripping on honest FD quadrature noise.
+REL_FD_LOOSE = 1e-4
 
 
-def verdict_from_subspikes_aggregate(worst: dict[str, float]) -> tuple[str, str]:
-    """Aggregate-over-sweep verdict.
+def verdict_from_subspikes_aggregate(worst: dict[str, float], worst_fd: dict[str, float]) -> tuple[str, str]:
+    """Aggregate-over-sweep verdict with independent FD oracle gate.
 
-    Input: `worst` is the worst-case rel_diff for each sub-spike across ALL
-    sweep configs. A sub-spike is "consistent" iff its worst-case rel_diff is
-    below the applicable tolerance.
+    Inputs:
+        worst    — worst-case within-procedure rel_diff per sub-spike across
+                   (rev_unrolled, rev_scan, fwd_unrolled) pairs.
+        worst_fd — worst-case finite-difference vs reverse-mode directional
+                   rel_diff per sub-spike. The FD oracle does not share the
+                   JAX AD substrate, so it catches the one failure mode the
+                   within-procedure comparison structurally cannot see: all
+                   three AD encodings uniformly wrong in the same direction.
 
-    Policy (two-tier):
-      - SGD sub-spike: REL_STRICT (1e-10). Different implementations of
-        identical math; failure = harness bug.
-      - SAM sub-spikes: REL_LOOSE (1e-4). Same math, different iteration
-        drivers + AD modes; some rounding drift is acceptable.
+    All four gates (within-procedure strict for SGD, within-procedure loose
+    for SAM sub-spikes, FD loose for every sub-spike) must pass for ALL_AGREE.
     """
 
     def ok_strict(name: str) -> bool:
@@ -433,47 +531,57 @@ def verdict_from_subspikes_aggregate(worst: dict[str, float]) -> tuple[str, str]
         w = worst.get(name, float("nan"))
         return not np.isnan(w) and w < REL_LOOSE
 
-    if not ok_strict("SGD"):
+    def ok_fd(name: str) -> bool:
+        w = worst_fd.get(name, float("nan"))
+        return not np.isnan(w) and w < REL_FD_LOOSE
+
+    if not ok_strict("SGD") or not ok_fd("SGD"):
         return (
             "HARNESS_BUG",
-            f"SGD sub-spike worst rel_diff = {worst.get('SGD'):.3e} exceeds "
-            f"REL_STRICT = {REL_STRICT:.0e}. The spike harness itself is broken; "
-            f"fix the baselines before trusting any SAM verdict.",
+            f"SGD harness sanity failed. Within-proc worst rel_diff="
+            f"{worst.get('SGD'):.3e} (needs < {REL_STRICT:.0e}), "
+            f"FD oracle worst rel_diff={worst_fd.get('SGD'):.3e} "
+            f"(needs < {REL_FD_LOOSE:.0e}). Fix the baselines before "
+            f"trusting any SAM verdict.",
         )
 
-    t_ok = ok_loose("SAM_T") and ok_loose("SAM_T_adam")
-    o_ok = ok_loose("SAM_O") and ok_loose("SAM_O_adam")
+    t_ok = ok_loose("SAM_T") and ok_loose("SAM_T_adam") and ok_fd("SAM_T") and ok_fd("SAM_T_adam")
+    o_ok = ok_loose("SAM_O") and ok_loose("SAM_O_adam") and ok_fd("SAM_O") and ok_fd("SAM_O_adam")
+
+    details = (
+        f"within-proc worst: T={worst['SAM_T']:.2e}, O={worst['SAM_O']:.2e}, "
+        f"T_adam={worst['SAM_T_adam']:.2e}, O_adam={worst['SAM_O_adam']:.2e}; "
+        f"FD-oracle worst: T={worst_fd['SAM_T']:.2e}, O={worst_fd['SAM_O']:.2e}, "
+        f"T_adam={worst_fd['SAM_T_adam']:.2e}, O_adam={worst_fd['SAM_O_adam']:.2e}"
+    )
 
     if t_ok and o_ok:
         return (
             "ALL_AGREE",
-            f"All SAM sub-spikes internally consistent across the sweep "
-            f"(worst SAM_T={worst['SAM_T']:.3e}, SAM_O={worst['SAM_O']:.3e}, "
-            f"SAM_T_adam={worst['SAM_T_adam']:.3e}, SAM_O_adam={worst['SAM_O_adam']:.3e}). "
-            f"optax.contrib.sam is second-order correct under nested jax.grad. "
-            f"→ Cancel samgria-JAX full port; collapse to ~50 LoC facade + ASAM + LAMPRollback transforms.",
+            f"All SAM sub-spikes pass within-procedure consistency AND "
+            f"finite-difference oracle agreement across the sweep. {details}. "
+            f"optax.contrib.sam is second-order correct under nested jax.grad "
+            f"within the tested envelope. → Drop the SAM-second-order "
+            f"correctness layer from samgria-JAX scope; retain ImplicitMAML, "
+            f"cross-backend consistency test, ASAM, LAMPRollback.",
         )
     if t_ok and not o_ok:
         return (
             "OPAQUE_DISAGREES",
-            f"Transparent SAM consistent (SAM_T={worst['SAM_T']:.3e}, "
-            f"SAM_T_adam={worst['SAM_T_adam']:.3e}) but opaque SAM "
-            f"inconsistent (SAM_O={worst['SAM_O']:.3e}, "
-            f"SAM_O_adam={worst['SAM_O_adam']:.3e}). → Ship samgria-JAX "
-            f"transparent-only with a documented 'why opaque is unsafe under nested grad' note.",
+            f"Transparent SAM passes; opaque SAM fails. {details}. "
+            f"→ Ship samgria-JAX transparent-only with a documented "
+            f"'why opaque is unsafe under nested grad' note.",
         )
     if not t_ok and not o_ok:
         return (
             "BOTH_FAIL",
-            f"Both SAM modes inconsistent (SAM_T={worst['SAM_T']:.3e}, "
-            f"SAM_O={worst['SAM_O']:.3e}, SAM_T_adam={worst['SAM_T_adam']:.3e}, "
-            f"SAM_O_adam={worst['SAM_O_adam']:.3e}). → Full samgria-JAX port "
-            f"justified; probable upstream optax bug, file an issue.",
+            f"Both SAM modes failed at least one gate. {details}. "
+            f"→ Full samgria-JAX SAM correctness layer justified; probable "
+            f"upstream optax bug, file an issue.",
         )
     return (
         "UNEXPECTED",
-        f"Transparent failed but opaque passed — this is a surprising "
-        f"combination that warrants manual review. Worst: {worst}",
+        f"Transparent failed but opaque passed — surprising combination. {details}. Requires manual review.",
     )
 
 
@@ -490,9 +598,12 @@ def build_all_subspikes(seed: int, sync_period: int, inner_steps: int) -> dict[s
     """Build the 5 sub-spikes for one (seed, sync_period, inner_steps) config."""
     global PARAMS, TASKS
     key = jax.random.PRNGKey(seed)
-    pk, tk = jax.random.split(key)
+    pk, tk, fk = jax.random.split(key, 3)
     PARAMS = init_mlp(pk)
     TASKS = make_sinusoid_tasks(tk)
+    # One direction key per sub-spike, all derived from the same seed so the
+    # FD comparison is deterministic across re-runs.
+    dk = jax.random.split(fk, 5)
 
     sgd_opt = optax.sgd(INNER_LR)
     adam_opt = optax.adam(INNER_LR, eps_root=1e-8)
@@ -524,30 +635,35 @@ def build_all_subspikes(seed: int, sync_period: int, inner_steps: int) -> dict[s
         "plain hand-coded SGD inner loop (harness sanity)",
         make_adapt_sgd_unrolled(inner_steps),
         make_adapt_sgd_scan(inner_steps),
+        fd_direction_key=dk[0],
     )
     subs["SAM_T"] = build_subspike(
         "SAM_T",
         "optax.contrib.sam(sgd)  opaque_mode=False",
         sam_t_sgd_u,
         sam_t_sgd_s,
+        fd_direction_key=dk[1],
     )
     subs["SAM_O"] = build_subspike(
         "SAM_O",
         "optax.contrib.sam(sgd)  opaque_mode=True",
         sam_o_sgd_u,
         sam_o_sgd_s,
+        fd_direction_key=dk[2],
     )
     subs["SAM_T_adam"] = build_subspike(
         "SAM_T_adam",
         "optax.contrib.sam(adam, eps_root=1e-8)  opaque_mode=False",
         sam_t_adam_u,
         sam_t_adam_s,
+        fd_direction_key=dk[3],
     )
     subs["SAM_O_adam"] = build_subspike(
         "SAM_O_adam",
         "optax.contrib.sam(adam, eps_root=1e-8)  opaque_mode=True",
         sam_o_adam_u,
         sam_o_adam_s,
+        fd_direction_key=dk[4],
     )
     return subs
 
@@ -587,6 +703,35 @@ def aggregate_worst(sweep_results) -> dict[str, float]:
     return worst
 
 
+def aggregate_worst_fd(sweep_results) -> dict[str, float]:
+    """Worst-case finite-difference vs AD rel_diff per sub-spike across the sweep."""
+    worst: dict[str, float] = {}
+    for _, subs in sweep_results:
+        for name, s in subs.items():
+            if np.isnan(s.fd_ad_rel_diff):
+                worst[name] = float("nan")
+            else:
+                worst[name] = max(worst.get(name, 0.0), s.fd_ad_rel_diff)
+    return worst
+
+
+_SUB_KEYS = ["SGD", "SAM_T", "SAM_O", "SAM_T_adam", "SAM_O_adam"]
+
+
+def print_fd_summary(sweep_results) -> None:
+    """Pretty-print FD-vs-AD agreement per sub-spike across the sweep."""
+    print()
+    print("=== FD ORACLE SUMMARY: rel_diff of finite-differences vs reverse-mode directional grad ===")
+    header = f"{'seed':>10s}  {'sync':>4s}  {'steps':>5s}  "
+    header += "  ".join(f"{k:>12s}" for k in _SUB_KEYS)
+    print(header)
+    print("-" * 98)
+    for (seed, sync, steps), subs in sweep_results:
+        row = f"{seed:>10d}  {sync:>4d}  {steps:>5d}  "
+        row += "  ".join(f"{subs[k].fd_ad_rel_diff:12.3e}" for k in _SUB_KEYS)
+        print(row)
+
+
 def main() -> None:
     print(f"Spike config: inner_lr={INNER_LR}  rho={RHO}  MLP={MLP_DIMS}")
     print(f"Tasks: {N_TASKS}  shots: {N_SHOTS}  query: {N_QUERY}")
@@ -605,13 +750,15 @@ def main() -> None:
                 print_subspike(s)
 
     print_sweep_summary(sweep_results)
+    print_fd_summary(sweep_results)
     worst = aggregate_worst(sweep_results)
+    worst_fd = aggregate_worst_fd(sweep_results)
 
     # --- Verdict ---
     print()
     print("=== VERDICT ===")
     try:
-        tag, msg = verdict_from_subspikes_aggregate(worst)
+        tag, msg = verdict_from_subspikes_aggregate(worst, worst_fd)
         print(f"{tag}: {msg}")
     except NotImplementedError as e:
         print(f"⚠  verdict_from_subspikes_aggregate is not yet implemented: {e}")
