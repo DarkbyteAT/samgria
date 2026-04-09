@@ -11,4 +11,7 @@ build/
 .pyright/
 results/
 .worktrees/
-uv.lock
+
+# Claude Code ephemeral state
+.claude/worktrees/
+.superpowers/
