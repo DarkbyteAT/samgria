@@ -42,26 +42,17 @@ class MetaStep:
     ``.step()`` to apply the outer update — or use the ``meta_step``
     context manager which calls it automatically on exit.
 
-    Parameters
-    ----------
-    meta_optimizer
-        The meta-learning algorithm (MAML, FOMAML, Reptile, etc.).
-    model
-        The model being meta-trained.
-    optimizer
-        The outer-loop optimizer.
-    loss_fn
-        Default loss function for tasks.  Takes ``(*support)`` or
-        ``(*query)`` and returns a scalar loss.
-    inner_steps
-        Default number of inner-loop SGD steps per task.
-    grad_transforms
-        Default gradient transforms for the inner loop.
-    inner_step_fn
-        Default inner step function: ``(params, grads) -> new_params``.
-    inner_reg_fn
-        Regularisation callback added to the inner loss at each step.
-        Signature: ``(current_params, base_params) -> scalar_penalty``.
+    Args:
+        meta_optimizer: The meta-learning algorithm (MAML, FOMAML, Reptile, etc.).
+        model: The model being meta-trained.
+        optimizer: The outer-loop optimizer.
+        loss_fn: Default loss function for tasks.  Takes ``(*support)`` or
+            ``(*query)`` and returns a scalar loss.
+        inner_steps: Default number of inner-loop SGD steps per task.
+        grad_transforms: Default gradient transforms for the inner loop.
+        inner_step_fn: Default inner step function: ``(params, grads) -> new_params``.
+        inner_reg_fn: Regularisation callback added to the inner loss at each step.
+            Signature: ``(current_params, base_params) -> scalar_penalty``.
     """
 
     def __init__(
@@ -76,6 +67,7 @@ class MetaStep:
         inner_step_fn: InnerStepFn | None = None,
         inner_reg_fn: InnerRegFn | None = None,
     ) -> None:
+        """Initialize the meta-step context with the given meta-optimizer and model."""
         self._meta_opt = meta_optimizer
         self._model = model
         self._optimizer = optimizer
@@ -105,31 +97,22 @@ class MetaStep:
     ) -> AdaptedState:
         """Adapt on one task and collect the query loss.
 
-        Parameters
-        ----------
-        support
-            Support set tensors passed to ``loss_fn(*support)``.
-        query
-            Query set tensors.  ``None`` for Reptile (no query eval).
-        loss_fn
-            Per-task loss function override.
-        inner_steps
-            Per-task inner step count override.
-        grad_transforms
-            Per-task gradient transform override.
-        inner_step_fn
-            Per-task inner optimizer override.
-        query_loss_fn
-            Custom query loss callback.  Receives ``(model, adapted)``
-            and returns a scalar loss.  Overrides the default query
-            loss computation.
-        weight
-            Scaling factor for this task's query loss contribution.
+        Args:
+            support: Support set tensors passed to ``loss_fn(*support)``.
+            query: Query set tensors.  ``None`` for Reptile (no query eval).
+            loss_fn: Per-task loss function override.
+            inner_steps: Per-task inner step count override.
+            grad_transforms: Per-task gradient transform override.
+            inner_step_fn: Per-task inner optimizer override.
+            query_loss_fn: Custom query loss callback.  Receives ``(model, adapted)``
+                and returns a scalar loss.  Overrides the default query
+                loss computation.
+            weight: Scaling factor for this task's query loss contribution.
 
-        Returns
-        -------
-        AdaptedState
-            The adapted state for this task (informational).
+        Returns:
+            The adapted state for this task. Returned for inspection only —
+            ``MetaStep`` already tracks it internally, so callers need not
+            retain it.
         """
         # Resolve per-task overrides
         task_loss_fn = loss_fn or self._default_loss_fn
@@ -176,10 +159,8 @@ class MetaStep:
     def step(self) -> None:
         """Apply the outer-loop update.
 
-        Raises
-        ------
-        ValueError
-            If no tasks have been collected.
+        Raises:
+            ValueError: If no tasks have been collected.
         """
         if not self._adapted:
             raise ValueError("MetaStep.step() called with zero tasks. Call .task() at least once before .step().")
@@ -208,11 +189,12 @@ def meta_step(
     Saves model/optimizer state on enter, applies the outer update on
     exit.  All keyword arguments are forwarded to ``MetaStep``.
 
-    Usage::
-
+    Example:
+        ```python
         with meta_step(fomaml, model, optimizer, loss_fn=loss_fn, inner_steps=5) as ms:
             for support, query in tasks:
                 ms.task(support=support, query=query)
+        ```
     """
     ms = MetaStep(meta_optimizer, model, optimizer, **kwargs)
     yield ms

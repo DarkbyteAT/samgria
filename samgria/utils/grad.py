@@ -9,19 +9,17 @@ import torch.nn as nn
 def get_grad(params: Iterable[nn.Parameter]) -> T.Tensor:
     """Return the current gradient of each parameter as a flattened vector.
 
-    Parameters
-    ----------
-    ``params`` : ``Iterable[Parameter]``
-        An ``Iterable`` of the parameters to collect gradients from.
+    Args:
+        params: An ``Iterable`` of the parameters to collect gradients from.
 
-    Returns
-    -------
-    ``Tensor``
+    Returns:
         A flattened vector of the gradients of each parameter.
+
+    Raises:
+        AttributeError: If any parameter has ``grad=None``. Callers must ensure
+            ``.backward()`` has been called and only pass parameters that
+            require gradients (frozen parameters have ``grad=None``).
     """
-    # p.grad is Optional[Tensor] — None for frozen parameters.
-    # Callers must ensure .backward() has been called and only
-    # pass parameters that require gradients.
     return T.cat([p.grad.view(-1) for p in params])  # pyright: ignore[reportOptionalMemberAccess]
 
 
@@ -29,12 +27,9 @@ def get_grad(params: Iterable[nn.Parameter]) -> T.Tensor:
 def set_grad(grads: T.Tensor, params: Iterable[nn.Parameter]) -> None:
     """Set the gradient of each parameter to the corresponding slice of a vector.
 
-    Parameters
-    ----------
-    ``grads`` : ``Tensor``
-        A flattened vector of the intended gradient for each parameter.
-    ``params`` : ``Iterable[Parameter]``
-        An ``Iterable`` of parameters to update the gradients of.
+    Args:
+        grads: A flattened vector of the intended gradient for each parameter.
+        params: An ``Iterable`` of parameters to update the gradients of.
     """
     i = 0
 

@@ -10,3 +10,5 @@ build/
 .ruff_cache/
 .pyright/
 results/
+.worktrees/
+uv.lock

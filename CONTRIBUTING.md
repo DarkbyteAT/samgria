@@ -11,7 +11,25 @@ source scripts/enable-venv.sh
 ## Code Conventions
 
 - **Python 3.11+** — `X | Y` union syntax, `list[T]`/`dict[K,V]` generics
-- **NumPy-style docstrings**
+- **Google-style docstrings**
+
+## Docstring Style
+
+Google-style docstrings with LaTeX math support:
+
+```python
+r"""Compute the SAM perturbation $\epsilon^* \approx \rho \nabla L / \|\nabla L\|$.
+
+Args:
+    rho: Perturbation radius $\rho$.
+    grad: Current gradient $\nabla L(\theta)$.
+
+Returns:
+    Adversarial perturbation vector.
+"""
+```
+
+Use `$...$` for inline math and `$$...$$` for display math in docstrings. Prefix docstrings containing LaTeX backslash sequences with `r"""..."""` to avoid `SyntaxWarning: invalid escape sequence` on Python 3.12+.
 
 ## Quality Gates
 

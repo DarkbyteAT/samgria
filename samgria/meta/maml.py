@@ -13,13 +13,12 @@ The only difference between MAML and FOMAML is ``create_graph``:
 - **FOMAML** (``create_graph=False``): drops second-order terms for
   a cheaper update that is often comparably effective.
 
-References
-----------
-Finn, Abbeel, Levine (2017).  Model-Agnostic Meta-Learning for Fast
-Adaptation of Deep Networks.  ICML.
+References:
+    Finn, Abbeel, Levine (2017).  Model-Agnostic Meta-Learning for Fast
+    Adaptation of Deep Networks.  ICML.
 
-Nichols, Schulman (2018).  On First-Order Meta-Learning Algorithms.
-arXiv:1803.02999.
+    Nichols, Schulman (2018).  On First-Order Meta-Learning Algorithms.
+    arXiv:1803.02999.
 """
 
 from __future__ import annotations
@@ -169,16 +168,15 @@ def _gradient_meta_step(
 class MAML:
     """Model-Agnostic Meta-Learning with full second-order gradients.
 
-    Parameters
-    ----------
-    inner_lr
-        Default learning rate for the inner-loop SGD steps.
-        Ignored when ``inner_step_fn`` is provided.
+    Args:
+        inner_lr: Default learning rate for the inner-loop SGD steps.
+            Ignored when ``inner_step_fn`` is provided.
     """
 
     create_graph: bool = True
 
     def __init__(self, inner_lr: float) -> None:
+        """Initialize MAML with the given inner learning rate."""
         self.inner_lr = inner_lr
 
     def adapt(
@@ -221,16 +219,15 @@ class MAML:
 class FOMAML:
     """First-Order MAML — drops second-order gradients for efficiency.
 
-    Parameters
-    ----------
-    inner_lr
-        Default learning rate for the inner-loop SGD steps.
-        Ignored when ``inner_step_fn`` is provided.
+    Args:
+        inner_lr: Default learning rate for the inner-loop SGD steps.
+            Ignored when ``inner_step_fn`` is provided.
     """
 
     create_graph: bool = False
 
     def __init__(self, inner_lr: float) -> None:
+        """Initialize FOMAML with the given inner learning rate."""
         self.inner_lr = inner_lr
 
     def adapt(

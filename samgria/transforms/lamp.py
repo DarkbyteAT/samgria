@@ -23,18 +23,16 @@ __all__ = ["LAMPRollback"]
 class LAMPRollback:
     """Local-Averaging over Multiple Perturbations with periodic rollback.
 
-    Parameters
-    ----------
-    `eps`
-        Noise scale.  Controls the magnitude of uniform noise injected after
-        each gradient descent step.
-    `rollback_len`
-        Number of steps between rollbacks.  After ``rollback_len`` noisy
-        updates are accumulated, parameters are replaced with their moving
-        average.
+    Args:
+        eps: Noise scale.  Controls the magnitude of uniform noise injected after
+            each gradient descent step.
+        rollback_len: Number of steps between rollbacks.  After ``rollback_len`` noisy
+            updates are accumulated, parameters are replaced with their moving
+            average.
     """
 
     def __init__(self, eps: float = 5e-3, rollback_len: int = 10) -> None:
+        """Initialize LAMPRollback with the given noise scale and rollback length."""
         self.eps = eps
         self.rollback_len = rollback_len
         # Lazily initialised on first post_step() call — needs parameter vector size

@@ -9,10 +9,9 @@ The inner loop shares the same functional implementation as MAML and
 FOMAML (``create_graph=False``), ensuring consistent behaviour for
 GradientTransforms and inner-loop regularisation.
 
-References
-----------
-Nichols, Schulman (2018).  On First-Order Meta-Learning Algorithms.
-arXiv:1803.02999.
+References:
+    Nichols, Schulman (2018).  On First-Order Meta-Learning Algorithms.
+    arXiv:1803.02999.
 """
 
 from __future__ import annotations
@@ -36,27 +35,24 @@ __all__ = ["Reptile"]
 class Reptile:
     """Reptile meta-optimizer with parameter interpolation outer update.
 
-    Parameters
-    ----------
-    inner_lr
-        Learning rate for inner-loop SGD steps.
-    meta_lr
-        Interpolation step size for the outer update.  Controls how far
-        outer parameters move toward the mean of adapted parameters.
+    Args:
+        inner_lr: Learning rate for inner-loop SGD steps.
+        meta_lr: Interpolation step size for the outer update.  Controls how far
+            outer parameters move toward the mean of adapted parameters.
 
-    Notes
-    -----
-    ``meta_step()`` writes directly into the model's parameters via
-    ``vector_to_parameters`` without calling ``optimizer.step()``.
-    This means the outer optimizer's internal state (momentum, variance,
-    step counts) is **not updated**.  The ``optimizer`` parameter exists
-    for protocol conformance.  Learning rate schedulers attached to the
-    optimizer will not progress.
+    Note:
+        ``meta_step()`` writes directly into the model's parameters via
+        ``vector_to_parameters`` without calling ``optimizer.step()``.
+        This means the outer optimizer's internal state (momentum, variance,
+        step counts) is **not updated**.  The ``optimizer`` parameter exists
+        for protocol conformance.  Learning rate schedulers attached to the
+        optimizer will not progress.
     """
 
     create_graph: bool = False
 
     def __init__(self, inner_lr: float, meta_lr: float) -> None:
+        """Initialize Reptile with the given inner and meta learning rates."""
         self.inner_lr = inner_lr
         self.meta_lr = meta_lr
 
