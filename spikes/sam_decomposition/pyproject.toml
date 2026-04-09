@@ -1,0 +1,15 @@
+[project]
+name = "samgria-spike-sam-decomposition"
+version = "0.0.0"
+description = "Spike: verify exact-SAM vs canonical-SAM algebraic decomposition via jax.vjp"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jax>=0.4.30",
+    "jaxlib>=0.4.30",
+    "optax>=0.2.5",
+    "pytest>=8.0",
+]
+
+[tool.uv]
+package = false
