@@ -19,3 +19,10 @@ lines-after-imports = 2
 
 [lint.pydocstyle]
 convention = "google"
+
+[lint.per-file-ignores]
+# Test functions are self-documenting through Given-When-Then structure and
+# descriptive test names; D rules don't add value here.
+"tests/**" = ["D"]
+# Example scripts are demonstrations, not library code — D rules add noise.
+"examples/**" = ["D"]
